@@ -30,64 +30,60 @@ export default function Login({ authError }) {
       display:'flex',
       alignItems:'center',
       justifyContent:'center',
-      background: 'linear-gradient(135deg, var(--green-dark) 0%, #2a6b44 100%)',
+      background: 'linear-gradient(135deg, #0d2818 0%, #1a4a2e 50%, #2a6b44 100%)',
       padding: 20,
     }}>
       <div style={{
         background: 'var(--white)',
         borderRadius: 'var(--radius-lg)',
-        padding: '40px 36px',
-        maxWidth: 420,
+        padding: '36px 36px 32px',
+        maxWidth: 460,
         width: '100%',
         boxShadow: 'var(--shadow-lg)',
       }}>
-        {/* Logo */}
-        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:12, marginBottom:28 }}>
-          <div style={{
-            width: 64,
-            height: 64,
-            borderRadius: '50%',
-            border: '2px solid var(--gold)',
-            background: 'var(--green-dark)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--gold)',
-            fontFamily: 'var(--font-display)',
-            fontSize: 22,
-            fontWeight: 700,
-          }}>
-            RKA
-          </div>
-          <div style={{ textAlign:'center' }}>
-            <h1 style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 22,
-              fontWeight: 600,
-              color: 'var(--green-dark)',
-              marginBottom: 4,
-            }}>
-              Radhakrishna Academy
-            </h1>
-            <div style={{
-              fontSize: 11,
-              color: 'var(--text-muted)',
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              fontWeight: 500,
-            }}>
-              HR · Attendance Portal
-            </div>
-          </div>
+        <div style={{ display:'flex', justifyContent:'center', marginBottom:18 }}>
+          <img src="/crest.png" alt="RKA Crest" style={{
+            width: 92,
+            height: 92,
+            objectFit: 'contain',
+          }} />
         </div>
 
-        <div style={{ height:1, background:'var(--gray-100)', margin:'0 auto 24px', width:'60%' }} />
+        <div style={{
+          background: '#000',
+          padding: '8px 14px',
+          borderRadius: 6,
+          marginBottom: 18,
+          display: 'flex',
+          justifyContent: 'center',
+        }}>
+          <img src="/banner.png" alt="Radhakrishna Academy" style={{
+            width: '100%',
+            maxWidth: 360,
+            height: 'auto',
+            display: 'block',
+          }} />
+        </div>
+
+        <div style={{
+          fontSize: 11,
+          color: 'var(--text-muted)',
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+          fontWeight: 600,
+          textAlign: 'center',
+          marginBottom: 24,
+        }}>
+          HR · Attendance Portal
+        </div>
+
+        <div style={{ height:1, background:'var(--gray-100)', margin:'0 auto 22px', width:'60%' }} />
 
         <p style={{
           fontSize: 13,
           color: 'var(--text-muted)',
           textAlign: 'center',
-          marginBottom: 24,
+          marginBottom: 22,
           lineHeight: 1.6,
         }}>
           Sign in with your <strong style={{ color:'var(--green-dark)' }}>@rkacademyballia.in</strong> Google account to manage attendance.
@@ -142,8 +138,8 @@ export default function Login({ authError }) {
         )}
 
         <div style={{
-          marginTop: 28,
-          paddingTop: 20,
+          marginTop: 24,
+          paddingTop: 18,
           borderTop: '1px solid var(--gray-100)',
           fontSize: 11,
           color: 'var(--gray-400)',

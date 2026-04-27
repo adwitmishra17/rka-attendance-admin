@@ -77,31 +77,32 @@ export default function Layout() {
 
   const SidebarContent = () => (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
-      {/* Logo */}
       <div onClick={() => navigate('/')} style={{
         padding:'18px 16px 14px',
         borderBottom:'1px solid rgba(255,255,255,0.07)',
         display:'flex',
         flexDirection:'column',
         alignItems:'center',
-        gap:8,
+        gap:6,
         cursor:'pointer',
       }}>
         <div style={{
-          width: 48,
-          height: 48,
+          width: 60,
+          height: 60,
           borderRadius: '50%',
-          border: '1px solid rgba(201,162,39,0.5)',
-          background: 'rgba(255,255,255,0.08)',
+          background: 'rgba(255,255,255,0.95)',
+          padding: 4,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: 'var(--gold)',
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: 16,
-          letterSpacing: '0.5px',
-        }}>RKA</div>
+        }}>
+          <img src="/crest.png" alt="RKA" style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'contain',
+            display: 'block',
+          }} />
+        </div>
         <div style={{
           fontFamily: 'var(--font-display)',
           fontSize: 11,
@@ -111,6 +112,7 @@ export default function Layout() {
           textAlign: 'center',
           lineHeight: 1.3,
           textTransform: 'uppercase',
+          marginTop: 4,
         }}>
           Radhakrishna<br/>Academy
         </div>
@@ -125,7 +127,6 @@ export default function Layout() {
         </div>
       </div>
 
-      {/* Nav */}
       <nav style={{ flex:1, padding:'10px 0', overflowY:'auto' }}>
         {NAV.map(n => (
           <NavLink key={n.to} to={n.to} end={n.end} style={({ isActive }) => ({
@@ -142,7 +143,6 @@ export default function Layout() {
         ))}
       </nav>
 
-      {/* User */}
       <div style={{ borderTop:'1px solid rgba(255,255,255,0.07)', padding:'12px 16px' }}>
         <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:10 }}>
           <div style={{
@@ -180,7 +180,6 @@ export default function Layout() {
 
   return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
-      {/* Desktop sidebar */}
       {!isMobile && (
         <aside style={{
           width:SIDEBAR_W,
@@ -195,7 +194,6 @@ export default function Layout() {
         </aside>
       )}
 
-      {/* Mobile overlay */}
       {isMobile && mobileOpen && (
         <div style={{ position:'fixed', inset:0, zIndex:200 }}>
           <div onClick={() => setMobileOpen(false)} style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.5)' }} />
@@ -205,12 +203,11 @@ export default function Layout() {
         </div>
       )}
 
-      {/* Main */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0 }}>
         {isMobile && (
           <div style={{
             background:'var(--green-dark)',
-            padding:'11px 16px',
+            padding:'10px 16px',
             display:'flex',
             alignItems:'center',
             justifyContent:'space-between',
@@ -220,13 +217,14 @@ export default function Layout() {
           }}>
             <div style={{ display:'flex', alignItems:'center', gap:9, color:'#fff' }}>
               <div style={{
-                width: 30, height: 30,
+                width: 32, height: 32,
                 borderRadius: '50%',
-                border: '1px solid rgba(201,162,39,0.4)',
-                color: 'var(--gold)',
+                background: 'rgba(255,255,255,0.95)',
+                padding: 2,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 11,
-              }}>RKA</div>
+              }}>
+                <img src="/crest.png" alt="RKA" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              </div>
               <span style={{ fontFamily:'var(--font-display)', fontSize:13, fontWeight:600 }}>Attendance</span>
             </div>
             <button onClick={() => setMobileOpen(o => !o)} style={{
