@@ -78,50 +78,27 @@ export default function Layout() {
   const SidebarContent = () => (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
       <div onClick={() => navigate('/')} style={{
-        padding:'18px 16px 14px',
+        padding:'24px 16px 18px',
         borderBottom:'1px solid rgba(255,255,255,0.07)',
         display:'flex',
         flexDirection:'column',
         alignItems:'center',
-        gap:6,
+        gap:8,
         cursor:'pointer',
       }}>
-        <div style={{
-          width: 60,
-          height: 60,
-          borderRadius: '50%',
-          background: 'rgba(255,255,255,0.95)',
-          padding: 4,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          <img src="/crest.png" alt="RKA" style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain',
-            display: 'block',
-          }} />
-        </div>
-        <div style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 11,
-          color: '#f0e8d6',
-          fontWeight: 600,
-          letterSpacing: '0.6px',
-          textAlign: 'center',
-          lineHeight: 1.3,
-          textTransform: 'uppercase',
-          marginTop: 4,
-        }}>
-          Radhakrishna<br/>Academy
-        </div>
+        <img src="/banner.png" alt="Radhakrishna Academy" style={{
+          width: '100%',
+          maxWidth: 184,
+          height: 'auto',
+          display: 'block',
+        }} />
         <div style={{
           fontSize: 8,
-          color: 'rgba(255,255,255,0.3)',
-          letterSpacing: '0.12em',
+          color: 'rgba(255,255,255,0.4)',
+          letterSpacing: '0.18em',
           textTransform: 'uppercase',
           fontWeight: 500,
+          marginTop: 4,
         }}>
           Attendance Portal
         </div>
@@ -216,16 +193,11 @@ export default function Layout() {
             zIndex:50,
           }}>
             <div style={{ display:'flex', alignItems:'center', gap:9, color:'#fff' }}>
-              <div style={{
-                width: 32, height: 32,
-                borderRadius: '50%',
-                background: 'rgba(255,255,255,0.95)',
-                padding: 2,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <img src="/crest.png" alt="RKA" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-              </div>
-              <span style={{ fontFamily:'var(--font-display)', fontSize:13, fontWeight:600 }}>Attendance</span>
+              <img src="/banner.png" alt="RKA" style={{
+                height: 28,
+                width: 'auto',
+                display: 'block',
+              }} />
             </div>
             <button onClick={() => setMobileOpen(o => !o)} style={{
               background:'rgba(255,255,255,0.1)', border:'none', borderRadius:8,
