@@ -3,6 +3,8 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../lib/firebase'
 import { useAuth, SUPER_ADMIN_EMAIL } from '../App'
+import GlobalSearch from './GlobalSearch'
+
 
 const NAV = [
   { to: '/', label: 'Dashboard', end: true, icon:
@@ -39,16 +41,43 @@ const NAV = [
       <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
     </svg>
   },
+  { to: '/departments', label: 'Departments', icon:
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M3 21v-7l9-7 9 7v7"/>
+      <path d="M9 21v-9h6v9"/>
+    </svg>
+  },
+  { to: '/walkins', label: 'Walk-ins', forReceptionist: true, icon:
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+      <circle cx="8.5" cy="7" r="4"/>
+      <line x1="20" y1="8" x2="20" y2="14"/>
+      <line x1="23" y1="11" x2="17" y2="11"/>
+    </svg>
+  },
+  { to: '/recruitment-tags', label: 'Recruitment Tags', icon:
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+      <line x1="7" y1="7" x2="7.01" y2="7"/>
+    </svg>
+  },
 ]
 
 const SIDEBAR_W = 232
 
 export default function Layout() {
-  const { user, adminRole, isSuperAdmin } = useAuth()
+  const { user, adminRole, isSuperAdmin, isReceptionist } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
+  // Filter nav items based on role:
+  //   Receptionists see ONLY items flagged forReceptionist (i.e., Walk-ins)
+  //   Admins see all items
+  const visibleNav = isReceptionist
+    ? NAV.filter(n => n.forReceptionist)
+    : NAV
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768)
@@ -105,7 +134,7 @@ export default function Layout() {
       </div>
 
       <nav style={{ flex:1, padding:'10px 0', overflowY:'auto' }}>
-        {NAV.map(n => (
+        {visibleNav.map(n => (
           <NavLink key={n.to} to={n.to} end={n.end} style={({ isActive }) => ({
             display:'flex', alignItems:'center', gap:10, padding:'9px 16px',
             color: isActive ? 'var(--gold)' : 'rgba(255,255,255,0.65)',
@@ -216,11 +245,13 @@ export default function Layout() {
             padding:'8px 24px',
             display:'flex',
             alignItems:'center',
-            justifyContent:'flex-end',
+            justifyContent:'space-between',
+            gap: 16,
             position:'sticky',
             top:0,
             zIndex:50,
           }}>
+            <GlobalSearch />
             <button onClick={() => setDark(d => !d)} style={{
               display:'flex',
               alignItems:'center',

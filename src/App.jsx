@@ -7,10 +7,15 @@ import Login from './pages/Login'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Employees from './pages/Employees'
+import EmployeeProfile from './pages/EmployeeProfile'
 import Attendance from './pages/Attendance'
 import Holidays from './pages/Holidays'
 import ReportingTime from './pages/ReportingTime'
 import FaceEnrollment from './pages/FaceEnrollment'
+import Departments from './pages/Departments'
+import WalkIns from './pages/WalkIns'
+import WalkInDetail from './pages/WalkInDetail'
+import RecruitmentTags from './pages/RecruitmentTags'
 
 export const SUPER_ADMIN_EMAIL = 'adwit@rkacademyballia.in'
 
@@ -75,8 +80,8 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:'var(--gray-50)' }}>
-        <div style={{ width:36, height:36, border:'3px solid var(--green-muted)', borderTopColor:'var(--green)', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--gray-50)' }}>
+        <div style={{ width: 36, height: 36, border: '3px solid var(--green-muted)', borderTopColor: 'var(--green)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
       </div>
     )
   }
@@ -87,16 +92,24 @@ export default function App() {
       adminRole,
       isSuperAdmin: adminRole === 'super_admin',
       isAdmin: adminRole === 'admin' || adminRole === 'super_admin',
+      isReceptionist: adminRole === 'receptionist',
     }}>
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" /> : <Login authError={authError} />} />
         <Route path="/" element={user ? <Layout /> : <Navigate to="/login" />}>
-          <Route index element={<Dashboard />} />
-          <Route path="employees" element={<Employees />} />
-          <Route path="attendance" element={<Attendance />} />
-          <Route path="holidays" element={<Holidays />} />
-          <Route path="reporting-time" element={<ReportingTime />} />
-          <Route path="face-enrollment" element={<FaceEnrollment />} />
+          {/* Receptionists land on walkins; everyone else lands on dashboard */}
+          <Route index element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Dashboard />} />
+          <Route path="employees" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Employees />} />
+          <Route path="employees/:id" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <EmployeeProfile />} />
+          <Route path="attendance" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Attendance />} />
+          <Route path="holidays" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Holidays />} />
+          <Route path="reporting-time" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <ReportingTime />} />
+          <Route path="face-enrollment" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <FaceEnrollment />} />
+          <Route path="departments" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Departments />} />
+          {/* Walk-ins — accessible to admin AND receptionist */}
+          <Route path="walkins" element={<WalkIns />} />
+          <Route path="walkins/:id" element={<WalkInDetail />} />
+          <Route path="recruitment-tags" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <RecruitmentTags />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

@@ -3,10 +3,13 @@ import { supabase, supabaseAdmin } from '../lib/supabase'
 import { useAuth } from '../App'
 import { useToast } from '../components/Toast'
 import Modal from '../components/Modal'
+import { useNavigate } from 'react-router-dom'
+import { listDepartments } from '../lib/departments'
 
 export default function Employees() {
   const { user } = useAuth()
   const toast = useToast()
+  const navigate = useNavigate()
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('active') // 'active' | 'inactive' | 'all'
@@ -14,9 +17,13 @@ export default function Employees() {
   const [editing, setEditing] = useState(null) // null | {} | employee object
   const [deleting, setDeleting] = useState(null) // null | employee object
 
+  // Departments (Phase 4.5)
+  const [departments, setDepartments] = useState([])
+  const [filterDepartmentId, setFilterDepartmentId] = useState(null)
+
   async function load() {
     setLoading(true)
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('employees')
       .select('*')
       .order('full_name', { ascending: true })
@@ -31,10 +38,18 @@ export default function Employees() {
 
   useEffect(() => { load() }, [])
 
+  // Load departments once on mount
+  useEffect(() => {
+    listDepartments().then(setDepartments).catch(() => setDepartments([]))
+  }, [])
+
   const filtered = useMemo(() => {
     let list = employees
     if (filter === 'active') list = list.filter(e => e.is_active)
     else if (filter === 'inactive') list = list.filter(e => !e.is_active)
+    if (filterDepartmentId) {
+      list = list.filter(e => e.department_id === filterDepartmentId)
+    }
     if (search.trim()) {
       const q = search.toLowerCase()
       list = list.filter(e =>
@@ -45,7 +60,7 @@ export default function Employees() {
       )
     }
     return list
-  }, [employees, filter, search])
+  }, [employees, filter, search, filterDepartmentId])
 
   const counts = useMemo(() => ({
     active: employees.filter(e => e.is_active).length,
@@ -83,8 +98,8 @@ export default function Employees() {
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-            <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           Add employee
         </button>
@@ -138,8 +153,8 @@ export default function Employees() {
             transform: 'translateY(-50%)',
             pointerEvents: 'none',
           }}>
-            <circle cx="11" cy="11" r="8"/>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
           <input
             type="text"
@@ -159,6 +174,30 @@ export default function Employees() {
           />
         </div>
       </div>
+
+      {/* Department filter chips (Phase 4.5) */}
+      {departments.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4 }}>
+            Department
+          </span>
+          <button
+            onClick={() => setFilterDepartmentId(null)}
+            style={deptChipStyle(!filterDepartmentId)}
+          >
+            All
+          </button>
+          {departments.map(d => (
+            <button
+              key={d.id}
+              onClick={() => setFilterDepartmentId(d.id)}
+              style={deptChipStyle(filterDepartmentId === d.id)}
+            >
+              {d.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Table */}
       <div style={{
@@ -189,8 +228,17 @@ export default function Employees() {
               </thead>
               <tbody>
                 {filtered.map((e, idx) => (
-                  <tr key={e.id} style={{ borderTop: idx === 0 ? 'none' : '1px solid var(--gray-100)' }}>
-                    <td style={td}>
+                  <tr
+                    key={e.id}
+                    onClick={() => navigate(`/employees/${e.id}`)}
+                    style={{
+                      borderTop: idx === 0 ? 'none' : '1px solid var(--gray-100)',
+                      cursor: 'pointer',
+                      transition: 'background 0.12s',
+                    }}
+                    onMouseEnter={(ev) => ev.currentTarget.style.background = 'var(--gray-50)'}
+                    onMouseLeave={(ev) => ev.currentTarget.style.background = 'transparent'}
+                  >                    <td style={td}>
                       <div style={{ fontWeight: 500, color: 'var(--text)' }}>{e.full_name}</div>
                       {e.email && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{e.email}</div>}
                     </td>
@@ -229,30 +277,30 @@ export default function Employees() {
                       )}
                     </td>
                     <td style={{ ...td, textAlign: 'right' }}>
-                      <button onClick={() => setEditing(e)} style={iconBtn} title="Edit">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                        </svg>
-                      </button>
-                      <button onClick={() => setDeleting(e)} style={{ ...iconBtn, marginLeft: 4, color: 'var(--crimson)' }} title={e.is_active ? 'Deactivate' : 'Reactivate'}>
-                        {e.is_active ? (
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/>
-                          </svg>
-                        ) : (
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polyline points="23 4 23 10 17 10"/>
-                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                          </svg>
-                        )}
-                      </button>
+                      <button onClick={(ev) => { ev.stopPropagation(); setEditing(e) }} style={iconBtn} title="Edit">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                    </button>
+                    <button onClick={(ev) => { ev.stopPropagation(); setDeleting(e) }} style={{ ...iconBtn, marginLeft: 4, color: 'var(--crimson)' }} title={e.is_active ? 'Deactivate' : 'Reactivate'}>
+                    {e.is_active ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="23 4 23 10 17 10" />
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                      </svg>
+                    )}
+                  </button>
                     </td>
-                  </tr>
+            </tr>
                 ))}
-              </tbody>
+          </tbody>
             </table>
-          </div>
+    </div>
         )}
       </div>
 
@@ -355,8 +403,8 @@ function EmptyState({ search, filter, onAdd }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--gold-dark)" strokeWidth="1.8">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-          <circle cx="9" cy="7" r="4"/>
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
         </svg>
       </div>
       <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 600, color: 'var(--green-dark)', marginBottom: 6 }}>
@@ -491,28 +539,28 @@ function EmployeeForm({ employee, onClose, onSaved, adminEmail }) {
       <div style={{ display: 'grid', gap: 14 }}>
         <Field label="Full name" required error={errors.full_name}>
           <input type="text" value={form.full_name} onChange={e => update('full_name', e.target.value)}
-                 style={inputStyle} placeholder="e.g. Amit Gupta" />
+            style={inputStyle} placeholder="e.g. Amit Gupta" />
         </Field>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="Email" error={errors.email} hint="Optional">
             <input type="email" value={form.email} onChange={e => update('email', e.target.value)}
-                   style={inputStyle} placeholder="amit@..." />
+              style={inputStyle} placeholder="amit@..." />
           </Field>
           <Field label="Phone" hint="Optional">
             <input type="text" value={form.phone} onChange={e => update('phone', e.target.value)}
-                   style={inputStyle} placeholder="+91..." />
+              style={inputStyle} placeholder="+91..." />
           </Field>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="Employee code" error={errors.employee_code} hint="School-assigned, optional">
             <input type="text" value={form.employee_code} onChange={e => update('employee_code', e.target.value)}
-                   style={inputStyle} placeholder="e.g. RKA-T-001" />
+              style={inputStyle} placeholder="e.g. RKA-T-001" />
           </Field>
           <Field label="Biometric code" error={errors.biometric_code} hint="From biometric machine">
             <input type="text" value={form.biometric_code} onChange={e => update('biometric_code', e.target.value)}
-                   style={inputStyle} placeholder="e.g. 118" />
+              style={inputStyle} placeholder="e.g. 118" />
           </Field>
         </div>
 
@@ -534,16 +582,16 @@ function EmployeeForm({ employee, onClose, onSaved, adminEmail }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <Field label="In time" error={errors.custom_in_time}>
               <input type="time" value={form.custom_in_time} onChange={e => update('custom_in_time', e.target.value)}
-                     style={inputStyle} />
+                style={inputStyle} />
             </Field>
             <Field label="Out time" error={errors.custom_out_time}>
               <input type="time" value={form.custom_out_time} onChange={e => update('custom_out_time', e.target.value)}
-                     style={inputStyle} />
+                style={inputStyle} />
             </Field>
             <Field label="Grace (min)">
               <input type="number" min="0" max="60" value={form.custom_grace_minutes}
-                     onChange={e => update('custom_grace_minutes', e.target.value)}
-                     style={inputStyle} placeholder="—" />
+                onChange={e => update('custom_grace_minutes', e.target.value)}
+                style={inputStyle} placeholder="—" />
             </Field>
           </div>
         </div>
@@ -702,4 +750,19 @@ function ConfirmDeactivate({ employee, onClose, onDone }) {
       </p>
     </Modal>
   )
+}
+
+// Helper for department filter chips (Phase 4.5)
+function deptChipStyle(active) {
+  return {
+    padding: '5px 12px',
+    background: active ? 'var(--green-dark)' : 'var(--gray-50)',
+    color: active ? 'white' : 'var(--text-muted)',
+    border: '1px solid ' + (active ? 'var(--green-dark)' : 'var(--gray-200)'),
+    borderRadius: 999,
+    fontSize: 11.5,
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  }
 }

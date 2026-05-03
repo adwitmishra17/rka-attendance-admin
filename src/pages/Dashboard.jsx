@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
+import ExpiryWidget from '../components/ExpiryWidget'
 
 export default function Dashboard() {
   const { user, isSuperAdmin } = useAuth()
@@ -61,6 +62,7 @@ export default function Dashboard() {
           <StatusPill label="Supabase Database" status={supabaseStatus} />
         </div>
       </div>
+<ExpiryWidget />
 
       {/* Quick stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:14 }}>
