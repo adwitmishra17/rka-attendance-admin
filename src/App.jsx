@@ -16,6 +16,7 @@ import Departments from './pages/Departments'
 import WalkIns from './pages/WalkIns'
 import WalkInDetail from './pages/WalkInDetail'
 import RecruitmentTags from './pages/RecruitmentTags'
+import AdminUsers from './pages/AdminUsers'
 
 export const SUPER_ADMIN_EMAIL = 'adwit@rkacademyballia.in'
 
@@ -110,6 +111,8 @@ export default function App() {
           <Route path="walkins" element={<WalkIns />} />
           <Route path="walkins/:id" element={<WalkInDetail />} />
           <Route path="recruitment-tags" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <RecruitmentTags />} />
+          {/* Admin Users — super admin only */}
+          <Route path="admin-users" element={adminRole === 'super_admin' ? <AdminUsers /> : <Navigate to="/" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

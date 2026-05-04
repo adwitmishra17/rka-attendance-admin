@@ -70,6 +70,14 @@ const NAV = [
         <line x1="7" y1="7" x2="7.01" y2="7" />
       </svg>
   },
+  {
+    to: '/admin-users', label: 'Admin Users', superAdminOnly: true, icon:
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 11l-3-3m0 0l-3 3m3-3v8" />
+      </svg>
+  },
 ]
 
 const SIDEBAR_W = 232
@@ -83,10 +91,11 @@ export default function Layout() {
 
   // Filter nav items based on role:
   //   Receptionists see ONLY items flagged forReceptionist (i.e., Walk-ins)
-  //   Admins see all items
+  //   Admins see all items EXCEPT superAdminOnly ones
+  //   Super admins see everything
   const visibleNav = isReceptionist
     ? NAV.filter(n => n.forReceptionist)
-    : NAV
+    : NAV.filter(n => !n.superAdminOnly || isSuperAdmin)
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768)
