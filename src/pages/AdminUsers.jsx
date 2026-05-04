@@ -7,6 +7,8 @@ import {
   updateAdmin,
   setAdminActive,
   deleteAdmin,
+  adminModules,
+  DEFAULT_MODULES,
 } from '../lib/admins'
 
 // ============================================================================
@@ -27,12 +29,16 @@ import {
 // ============================================================================
 
 const ROLES = [
-  { value: 'admin',        label: 'Admin',        desc: 'Full HRMS access for one branch' },
-  { value: 'receptionist', label: 'Receptionist', desc: 'Walk-ins only, for one branch' },
+  { value: 'admin',        label: 'Admin',      desc: 'Full HRMS access for one branch' },
+  { value: 'receptionist', label: 'Front desk', desc: 'Walk-ins only, for one branch' },
 ]
 const BRANCHES = [
   { value: 'MAIN', label: 'Main Campus', desc: 'Sawarubandh / Akhar' },
   { value: 'CITY', label: 'City Branch', desc: 'Japlinganj' },
+]
+const MODULE_INFO = [
+  { value: 'tracker', label: 'Academic Tracker', desc: 'Lessons, tests, syllabus' },
+  { value: 'hrms',    label: 'HRMS Portal',      desc: 'Employees, attendance, walk-ins' },
 ]
 
 export default function AdminUsers() {
@@ -49,6 +55,7 @@ export default function AdminUsers() {
   const [newName, setNewName] = useState('')
   const [newRole, setNewRole] = useState('admin')
   const [newBranch, setNewBranch] = useState('MAIN')
+  const [newModules, setNewModules] = useState([...DEFAULT_MODULES])
   const [submitting, setSubmitting] = useState(false)
   const [addError, setAddError] = useState('')
 
@@ -57,6 +64,7 @@ export default function AdminUsers() {
   const [editName, setEditName] = useState('')
   const [editRole, setEditRole] = useState('admin')
   const [editBranch, setEditBranch] = useState('MAIN')
+  const [editModules, setEditModules] = useState([...DEFAULT_MODULES])
   const [editSubmitting, setEditSubmitting] = useState(false)
   const [editError, setEditError] = useState('')
 
@@ -78,7 +86,9 @@ export default function AdminUsers() {
   }
 
   function openAdd() {
-    setNewEmail(''); setNewName(''); setNewRole('admin'); setNewBranch('MAIN'); setAddError('')
+    setNewEmail(''); setNewName(''); setNewRole('admin'); setNewBranch('MAIN')
+    setNewModules([...DEFAULT_MODULES])
+    setAddError('')
     setShowAdd(true)
   }
 
@@ -91,6 +101,7 @@ export default function AdminUsers() {
         fullName: newName,
         role: newRole,
         branchCode: newBranch,
+        modules: newRole === 'receptionist' ? ['hrms'] : newModules,
         currentUser: user,
       })
       toast.show('Admin added')
@@ -107,6 +118,7 @@ export default function AdminUsers() {
     setEditName(a.fullName || '')
     setEditRole(ROLES.find(r => r.value === a.role) ? a.role : 'admin')
     setEditBranch(BRANCHES.find(b => b.value === a.branchCode) ? a.branchCode : 'MAIN')
+    setEditModules(adminModules(a))
     setEditError('')
   }
 
@@ -120,6 +132,7 @@ export default function AdminUsers() {
         fullName: editName,
         role: editRole,
         branchCode: editBranch,
+        modules: editRole === 'receptionist' ? ['hrms'] : editModules,
         currentUser: user,
       })
       toast.show('Admin updated')
@@ -163,7 +176,7 @@ export default function AdminUsers() {
             Admin Users
           </h1>
           <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            Manage who can sign in to HRMS. Branch admins have full access to their campus; receptionists see walk-ins only.
+            Manage who can sign in to HRMS. Branch admins have full access to their campus; front-desk staff see walk-ins only.
           </p>
           <div style={{ width: 40, height: 2, background: 'linear-gradient(90deg, var(--gold), transparent)', marginTop: 8, borderRadius: 1 }} />
         </div>
@@ -251,6 +264,9 @@ export default function AdminUsers() {
                     </td>
                     <td style={td}>
                       <RoleBadge role={a.role} />
+                      <div style={{ marginTop: 5 }}>
+                        <ModuleChips admin={a} />
+                      </div>
                       {isLegacySuper && (
                         <div style={{ fontSize: 10, color: 'var(--crimson)', marginTop: 4 }}>Legacy — please edit</div>
                       )}
@@ -335,6 +351,9 @@ export default function AdminUsers() {
           <Field label="Branch">
             <BranchRadios value={newBranch} onChange={setNewBranch} disabled={submitting} />
           </Field>
+          <Field label="Apps">
+            <ModulesPicker value={newModules} onChange={setNewModules} role={newRole} disabled={submitting} />
+          </Field>
           {addError && <div style={errBox}>{addError}</div>}
           <button
             onClick={handleAdd}
@@ -370,6 +389,9 @@ export default function AdminUsers() {
           </Field>
           <Field label="Branch">
             <BranchRadios value={editBranch} onChange={setEditBranch} disabled={editSubmitting} />
+          </Field>
+          <Field label="Apps">
+            <ModulesPicker value={editModules} onChange={setEditModules} role={editRole} disabled={editSubmitting} />
           </Field>
           {editError && <div style={errBox}>{editError}</div>}
           <button
@@ -482,8 +504,97 @@ function RoleBadge({ role }) {
   const isRecep = role === 'receptionist'
   const bg = isSuper ? 'var(--gold-light)' : isRecep ? 'rgba(139,26,26,0.08)' : 'var(--green-light)'
   const fg = isSuper ? 'var(--gold-dark)' : isRecep ? 'var(--crimson)' : 'var(--green)'
-  const label = isSuper ? '⭐ Super Admin' : isRecep ? 'Receptionist' : 'Admin'
+  const label = isSuper ? '⭐ Super Admin' : isRecep ? 'Front desk' : 'Admin'
   return <span style={pill(bg, fg)}>{label}</span>
+}
+
+/**
+ * Multi-select module checkboxes — one card per available app. Disabled
+ * (and forced to ['hrms']) when role is receptionist; we show the cards
+ * read-only with a helper message in that case so the user understands
+ * why they can't pick.
+ */
+function ModulesPicker({ value, onChange, role, disabled }) {
+  const lockedToHrms = role === 'receptionist'
+  const effective = lockedToHrms ? ['hrms'] : value
+
+  function toggle(mod) {
+    if (lockedToHrms || disabled) return
+    const has = effective.includes(mod)
+    let next
+    if (has) {
+      next = effective.filter(m => m !== mod)
+      if (next.length === 0) return  // must keep at least one
+    } else {
+      next = [...effective, mod]
+    }
+    onChange(next)
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        {MODULE_INFO.map(m => {
+          const checked = effective.includes(m.value)
+          const cardDisabled = lockedToHrms || disabled
+          return (
+            <label
+              key={m.value}
+              style={{
+                ...radioCard(checked, cardDisabled),
+                cursor: cardDisabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(m.value)}
+                  disabled={cardDisabled}
+                />
+                <span style={{ fontSize: 13, fontWeight: 600, color: checked ? 'var(--green-dark)' : 'var(--text)' }}>
+                  {m.label}
+                </span>
+              </div>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 22 }}>{m.desc}</span>
+            </label>
+          )
+        })}
+      </div>
+      {lockedToHrms && (
+        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+          Front-desk staff are always limited to HRMS only.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Compact chip pair shown under the role badge in the table.
+ */
+function ModuleChips({ admin }) {
+  const mods = adminModules(admin)
+  if (mods.length === 0) return null
+  if (mods.length === MODULE_INFO.length) {
+    return (
+      <span style={modChip('var(--green-light)', 'var(--green-dark)')}>
+        All apps
+      </span>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+      {mods.map(m => {
+        const info = MODULE_INFO.find(x => x.value === m)
+        return (
+          <span key={m} style={modChip('var(--gray-50)', 'var(--text)')}>
+            {info ? info.label.replace(' Portal', '').replace('Academic ', '') : m}
+          </span>
+        )
+      })}
+    </div>
+  )
 }
 
 // ----------------------------------------------------------------------------
@@ -529,6 +640,15 @@ function pill(bg, fg) {
     fontSize: 11, padding: '3px 10px', borderRadius: 12,
     background: bg, color: fg, fontWeight: 600,
     whiteSpace: 'nowrap', display: 'inline-block',
+  }
+}
+
+function modChip(bg, fg) {
+  return {
+    fontSize: 10, padding: '1px 7px', borderRadius: 4,
+    background: bg, color: fg, fontWeight: 600,
+    whiteSpace: 'nowrap', display: 'inline-block',
+    border: '1px solid var(--gray-200)',
   }
 }
 

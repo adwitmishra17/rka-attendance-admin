@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, createContext, useContext } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, createContext, useContext } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
@@ -10,6 +10,7 @@ import {
   resolveBranch,
   effectiveBranches as computeEffectiveBranches,
 } from './lib/branch'
+import { adminModules } from './lib/admins'
 import Login from './pages/Login'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
@@ -33,9 +34,8 @@ export const useAuth = () => useContext(AuthContext)
 export default function App() {
   const [user, setUser] = useState(null)
   const [adminRole, setAdminRole] = useState(null)
-  // Branch awareness (B-HRMS-2a)
-  const [allowedBranches, setAllowedBranches] = useState([]) // ['MAIN','CITY'] or ['MAIN'] or ['CITY']
-  const [currentBranch, setCurrentBranchState] = useState(null) // 'MAIN' | 'CITY' | null (= All)
+  const [allowedBranches, setAllowedBranches] = useState([])
+  const [currentBranch, setCurrentBranchState] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [authError, setAuthError] = useState('')
 
@@ -53,7 +53,6 @@ export default function App() {
 
       const email = (u.email || '').toLowerCase()
 
-      // Hardcoded super admin — sees both branches
       if (email === SUPER_ADMIN_EMAIL) {
         const allowed = ['MAIN', 'CITY']
         setUser(u)
@@ -64,7 +63,6 @@ export default function App() {
         return
       }
 
-      // Branch admin / receptionist — look up admin doc
       try {
         const adminDoc = await getDoc(doc(db, 'admins', email))
         if (!adminDoc.exists()) {
@@ -81,9 +79,17 @@ export default function App() {
           return
         }
 
-        // Resolve branch from admin doc. Legacy docs without branchCode are
-        // silently treated as MAIN (matches the data backfill convention:
-        // pre-CITY records belong to MAIN).
+        // Module gate: this is the HRMS app, so 'hrms' must be in the
+        // admin's allowed modules. Legacy docs missing the field default
+        // to both modules (handled by adminModules helper).
+        const mods = adminModules(data)
+        if (!mods.includes('hrms')) {
+          setAuthError('You don\'t have access to the HRMS portal. Contact Adwit Mishra.')
+          await signOut(auth)
+          setAuthLoading(false)
+          return
+        }
+
         let allowed
         if (BRANCH_CODES.includes(data.branchCode)) {
           allowed = [data.branchCode]
@@ -108,31 +114,25 @@ export default function App() {
     return () => unsub()
   }, [])
 
-  /**
-   * Branch switcher. Validates against allowedBranches before applying so
-   * a stale call (e.g. from a stale closure) can't put the user into an
-   * unauthorised branch.
-   *
-   *   setCurrentBranch('MAIN')  → set to MAIN if allowed
-   *   setCurrentBranch('CITY')  → set to CITY if allowed
-   *   setCurrentBranch(null)    → All Branches (only if user has multiple allowed)
-   *   anything invalid          → silently ignored
-   */
   const setCurrentBranch = useCallback((next) => {
     if (next === null) {
       if (allowedBranches.length > 1) {
         setCurrentBranchState(null)
         writeStoredBranch(null)
       }
-      // Branch admin/receptionist can't pick All — silently ignore.
       return
     }
     if (allowedBranches.includes(next)) {
       setCurrentBranchState(next)
       writeStoredBranch(next)
     }
-    // Invalid input silently ignored — no error UI for a programmer mistake.
   }, [allowedBranches])
+
+  // Memoise effectiveBranches so its array identity is stable across renders.
+  const effectiveBranches = useMemo(
+    () => computeEffectiveBranches(currentBranch, allowedBranches),
+    [currentBranch, allowedBranches]
+  )
 
   if (authLoading) {
     return (
@@ -142,10 +142,6 @@ export default function App() {
     )
   }
 
-  // Pre-compute effectiveBranches so consumers don't re-derive it everywhere.
-  // This is the array to pass to `.in('branch_code', effectiveBranches)` in queries.
-  const effectiveBranches = computeEffectiveBranches(currentBranch, allowedBranches)
-
   return (
     <AuthContext.Provider value={{
       user,
@@ -153,7 +149,6 @@ export default function App() {
       isSuperAdmin: adminRole === 'super_admin',
       isAdmin: adminRole === 'admin' || adminRole === 'super_admin',
       isReceptionist: adminRole === 'receptionist',
-      // Branch awareness (B-HRMS-2a)
       allowedBranches,
       currentBranch,
       setCurrentBranch,
@@ -163,7 +158,6 @@ export default function App() {
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" /> : <Login authError={authError} />} />
         <Route path="/" element={user ? <Layout /> : <Navigate to="/login" />}>
-          {/* Receptionists land on walkins; everyone else lands on dashboard */}
           <Route index element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Dashboard />} />
           <Route path="employees" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Employees />} />
           <Route path="employees/:id" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <EmployeeProfile />} />
@@ -172,11 +166,9 @@ export default function App() {
           <Route path="reporting-time" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <ReportingTime />} />
           <Route path="face-enrollment" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <FaceEnrollment />} />
           <Route path="departments" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Departments />} />
-          {/* Walk-ins — accessible to admin AND receptionist */}
           <Route path="walkins" element={<WalkIns />} />
           <Route path="walkins/:id" element={<WalkInDetail />} />
           <Route path="recruitment-tags" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <RecruitmentTags />} />
-          {/* Admin Users — super admin only */}
           <Route path="admin-users" element={adminRole === 'super_admin' ? <AdminUsers /> : <Navigate to="/" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
