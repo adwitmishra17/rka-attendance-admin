@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { supabase, supabaseAdmin } from '../lib/supabase'
+import { useAuth } from '../App'
 import { useToast } from '../components/Toast'
+import { applyBranchFilter, applyBranchFilterArray, applyBranchFilterNullable } from '../lib/branchQuery'
+import { branchLabel } from '../lib/branch'
 
 const STATUS_STYLES = {
   present: { bg: 'var(--green-light)', color: 'var(--green-dark)', label: 'Present' },
@@ -52,12 +55,13 @@ function relativeTime(isoStr) {
 }
 
 export default function Attendance() {
+  const { effectiveBranches, currentBranch } = useAuth()
   const toast = useToast()
   const [selectedDate, setSelectedDate] = useState(formatDate(new Date()))
   const [employees, setEmployees] = useState([])
   const [dailyRecords, setDailyRecords] = useState([])
   const [recentEvents, setRecentEvents] = useState([])
-  const [holiday, setHoliday] = useState(null)
+  const [holidaysOnDate, setHolidaysOnDate] = useState([])  // can be 0, 1, or 2 holidays (per branch + global)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -67,35 +71,59 @@ export default function Attendance() {
   async function loadData() {
     setLoading(true)
     try {
+      // Build all queries with branch filtering applied.
+      // employees:           ARRAY column → overlaps
+      // attendance_daily:    scalar NOT NULL → in
+      // attendance_events:   scalar NOT NULL → in
+      // holidays:            scalar nullable → NULL or in
+      let empQ = supabaseAdmin
+        .from('employees')
+        .select('id, full_name, employee_code, biometric_code, email, branch_codes')
+        .eq('is_active', true)
+        .order('full_name', { ascending: true })
+      empQ = applyBranchFilterArray(empQ, effectiveBranches)
+
+      let dailyQ = supabaseAdmin
+        .from('attendance_daily')
+        .select('*')
+        .eq('date', selectedDate)
+      dailyQ = applyBranchFilter(dailyQ, effectiveBranches)
+
+      let eventsP
+      if (isToday) {
+        let eventsQ = supabaseAdmin
+          .from('attendance_events')
+          .select('*, employees(full_name, employee_code)')
+          .gte('event_time', selectedDate + 'T00:00:00')
+          .lt('event_time', selectedDate + 'T23:59:59')
+          .order('event_time', { ascending: false })
+          .limit(20)
+        eventsQ = applyBranchFilter(eventsQ, effectiveBranches)
+        eventsP = eventsQ
+      } else {
+        eventsP = Promise.resolve({ data: [] })
+      }
+
+      // Holiday lookup. Multi-branch view can return up to 2 rows
+      // (e.g. one for MAIN, one for CITY). Use list query, not maybeSingle.
+      let holQ = supabaseAdmin
+        .from('holidays')
+        .select('name, branch_code')
+        .eq('date', selectedDate)
+      holQ = applyBranchFilterNullable(holQ, effectiveBranches)
+
       const [empRes, dailyRes, eventsRes, holidayRes] = await Promise.all([
-        supabaseAdmin.from('employees')
-          .select('id, full_name, employee_code, biometric_code, email')
-          .eq('is_active', true)
-          .order('full_name', { ascending: true }),
-        supabaseAdmin.from('attendance_daily')
-          .select('*')
-          .eq('date', selectedDate),
-        isToday
-          ? supabaseAdmin.from('attendance_events')
-              .select('*, employees(full_name, employee_code)')
-              .gte('event_time', selectedDate + 'T00:00:00')
-              .lt('event_time', selectedDate + 'T23:59:59')
-              .order('event_time', { ascending: false })
-              .limit(20)
-          : Promise.resolve({ data: [] }),
-        supabaseAdmin.from('holidays')
-          .select('name')
-          .eq('date', selectedDate)
-          .maybeSingle(),
+        empQ, dailyQ, eventsP, holQ,
       ])
 
       if (empRes.error) throw empRes.error
       if (dailyRes.error) throw dailyRes.error
+      if (holidayRes.error) throw holidayRes.error
 
       setEmployees(empRes.data || [])
       setDailyRecords(dailyRes.data || [])
       setRecentEvents(eventsRes.data || [])
-      setHoliday(holidayRes?.data || null)
+      setHolidaysOnDate(holidayRes.data || [])
     } catch (e) {
       toast.show('Failed to load attendance: ' + e.message, 'error')
     } finally {
@@ -103,7 +131,7 @@ export default function Attendance() {
     }
   }
 
-  useEffect(() => { loadData() }, [selectedDate])
+  useEffect(() => { loadData() }, [selectedDate, effectiveBranches])
 
   // Auto-refresh every 30 seconds when viewing today
   useEffect(() => {
@@ -119,21 +147,33 @@ export default function Attendance() {
     return m
   }, [dailyRecords])
 
-  // Combine employees with their daily records
+  // Combine employees with their daily records.
+  // Holiday handling: an employee is "on holiday" if any holiday applies to
+  // any of their branches (NULL = global, or branch_code matches one of theirs).
   const roster = useMemo(() => {
+    function holidayAppliesTo(emp) {
+      if (!holidaysOnDate.length) return null
+      // NULL holidays apply to everyone
+      const global = holidaysOnDate.find(h => h.branch_code === null)
+      if (global) return global
+      // Otherwise, find one matching any of the employee's branches
+      const branches = Array.isArray(emp.branch_codes) ? emp.branch_codes : []
+      return holidaysOnDate.find(h => branches.includes(h.branch_code)) || null
+    }
     return employees.map(e => {
       const daily = dailyByEmployee.get(e.id)
+      const empHoliday = holidayAppliesTo(e)
       let effectiveStatus = 'not_marked'
-      if (holiday) {
+      if (empHoliday) {
         effectiveStatus = 'holiday'
       } else if (daily) {
         effectiveStatus = daily.status || 'present'
       } else if (!isToday) {
         effectiveStatus = 'absent'
       }
-      return { employee: e, daily, status: effectiveStatus }
+      return { employee: e, daily, status: effectiveStatus, holiday: empHoliday }
     })
-  }, [employees, dailyByEmployee, holiday, isToday])
+  }, [employees, dailyByEmployee, holidaysOnDate, isToday])
 
   // Stats
   const stats = useMemo(() => {
@@ -269,8 +309,8 @@ export default function Attendance() {
         )}
       </div>
 
-      {/* Holiday banner */}
-      {holiday && (
+      {/* Holiday banner — one line per holiday that applies to current branch view */}
+      {holidaysOnDate.length > 0 && (
         <div style={{
           padding: '14px 18px',
           background: 'linear-gradient(135deg, rgba(201,162,39,0.12), rgba(201,162,39,0.04))',
@@ -281,7 +321,16 @@ export default function Attendance() {
           color: 'var(--gold-dark)',
           fontWeight: 500,
         }}>
-          ⓘ {holiday.name} — {formatDateLabel(selectedDate)} is a holiday
+          {holidaysOnDate.map((h, i) => (
+            <div key={i} style={{ marginTop: i > 0 ? 4 : 0 }}>
+              ⓘ {h.name} — {formatDateLabel(selectedDate)} is a holiday
+              {h.branch_code !== null && (
+                <span style={{ fontSize: 11, marginLeft: 8, opacity: 0.85 }}>
+                  ({branchLabel(h.branch_code)} only)
+                </span>
+              )}
+            </div>
+          ))}
         </div>
       )}
 

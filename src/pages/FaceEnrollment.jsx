@@ -8,6 +8,7 @@ import {
   detectFaceFull,
   evaluateFaceQuality,
 } from '../lib/faceDetection'
+import { applyBranchFilterArray } from '../lib/branchQuery'
 
 // 5-capture standard sequence
 const CAPTURE_SEQUENCE = [
@@ -31,7 +32,7 @@ const QUALITY_MESSAGES = {
 }
 
 export default function FaceEnrollment() {
-  const { user } = useAuth()
+  const { user, effectiveBranches } = useAuth()
   const toast = useToast()
 
   const [loading, setLoading] = useState(true)
@@ -44,12 +45,16 @@ export default function FaceEnrollment() {
 
   async function loadEmployees() {
     setLoading(true)
-    // 1. Get all active employees
-    const { data: emps, error: empErr } = await supabaseAdmin
+    // 1. Get all active employees in the current branch view.
+    //    employees.branch_codes is an ARRAY (some teachers cross branches),
+    //    so we use the array-overlap helper.
+    let empQuery = supabaseAdmin
       .from('employees')
-      .select('id, full_name, employee_code, biometric_code, email, is_active')
+      .select('id, full_name, employee_code, biometric_code, email, is_active, branch_codes')
       .eq('is_active', true)
       .order('full_name', { ascending: true })
+    empQuery = applyBranchFilterArray(empQuery, effectiveBranches)
+    const { data: emps, error: empErr } = await empQuery
 
     if (empErr) {
       toast.show('Failed to load employees: ' + empErr.message, 'error')
@@ -75,7 +80,7 @@ export default function FaceEnrollment() {
     setLoading(false)
   }
 
-  useEffect(() => { loadEmployees() }, [])
+  useEffect(() => { loadEmployees() }, [effectiveBranches])
 
   const filtered = useMemo(() => {
     let list = employees

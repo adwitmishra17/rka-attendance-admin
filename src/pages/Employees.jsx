@@ -5,9 +5,11 @@ import { useToast } from '../components/Toast'
 import Modal from '../components/Modal'
 import { useNavigate } from 'react-router-dom'
 import { listDepartments } from '../lib/departments'
+import { applyBranchFilterArray } from '../lib/branchQuery'
+import { branchLabel, BRANCHES } from '../lib/branch'
 
 export default function Employees() {
-  const { user } = useAuth()
+  const { user, effectiveBranches } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
   const [employees, setEmployees] = useState([])
@@ -23,10 +25,12 @@ export default function Employees() {
 
   async function load() {
     setLoading(true)
-    const { data, error } = await supabaseAdmin
+    let q = supabaseAdmin
       .from('employees')
       .select('*')
       .order('full_name', { ascending: true })
+    q = applyBranchFilterArray(q, effectiveBranches)
+    const { data, error } = await q
     if (error) {
       toast.show('Failed to load employees: ' + error.message, 'error')
       setEmployees([])
@@ -36,7 +40,7 @@ export default function Employees() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [effectiveBranches])
 
   // Load departments once on mount
   useEffect(() => {
@@ -241,6 +245,13 @@ export default function Employees() {
                   >                    <td style={td}>
                       <div style={{ fontWeight: 500, color: 'var(--text)' }}>{e.full_name}</div>
                       {e.email && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{e.email}</div>}
+                      {Array.isArray(e.branch_codes) && e.branch_codes.length > 0 && (
+                        <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                          {e.branch_codes.map(bc => (
+                            <span key={bc} style={branchChip}>{branchLabel(bc)}</span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td style={td}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -353,6 +364,18 @@ const codePill = {
   color: 'var(--text)',
   borderRadius: 4,
   fontWeight: 500,
+}
+
+const branchChip = {
+  display: 'inline-block',
+  padding: '1px 6px',
+  fontSize: 10,
+  background: 'var(--green-light)',
+  color: 'var(--green-dark)',
+  borderRadius: 4,
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
 }
 
 const statusPillActive = {

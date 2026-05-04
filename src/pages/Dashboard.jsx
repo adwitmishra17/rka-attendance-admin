@@ -1,20 +1,28 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
+import { applyBranchFilterArray, applyBranchFilterNullable } from '../lib/branchQuery'
+import { branchLabel } from '../lib/branch'
 import ExpiryWidget from '../components/ExpiryWidget'
 
 export default function Dashboard() {
-  const { user, isSuperAdmin } = useAuth()
+  const { user, isSuperAdmin, currentBranch, effectiveBranches } = useAuth()
   const [stats, setStats] = useState({ employees: '—', holidays: '—' })
   const [supabaseStatus, setSupabaseStatus] = useState('checking')
 
   useEffect(() => {
     (async () => {
       try {
-        const [emp, hol] = await Promise.all([
-          supabase.from('employees').select('id', { count: 'exact', head: true }),
-          supabase.from('holidays').select('id', { count: 'exact', head: true }),
-        ])
+        // Counts respect the current branch view.
+        // employees: branch_codes is an ARRAY, use overlaps()
+        // holidays:  branch_code nullable, NULL = applies to both
+        let empQ = supabase.from('employees').select('id', { count: 'exact', head: true })
+        empQ = applyBranchFilterArray(empQ, effectiveBranches)
+
+        let holQ = supabase.from('holidays').select('id', { count: 'exact', head: true })
+        holQ = applyBranchFilterNullable(holQ, effectiveBranches)
+
+        const [emp, hol] = await Promise.all([empQ, holQ])
         if (emp.error) throw emp.error
         if (hol.error) throw hol.error
         setStats({
@@ -27,7 +35,7 @@ export default function Dashboard() {
         setSupabaseStatus('error: ' + e.message)
       }
     })()
-  }, [])
+  }, [effectiveBranches])
 
   return (
     <div style={{ padding:'32px 36px', maxWidth:1200 }}>
@@ -42,6 +50,8 @@ export default function Dashboard() {
         </h1>
         <p style={{ fontSize:13, color:'var(--text-muted)' }}>
           {isSuperAdmin ? 'Super Admin · Full system control' : 'Admin · HR & Attendance'}
+          <span style={{ margin: '0 8px', color: 'var(--gray-300)' }}>·</span>
+          Viewing: <strong style={{ color: currentBranch === null ? 'var(--gold-dark)' : 'var(--green-dark)' }}>{branchLabel(currentBranch)}</strong>
         </p>
         <div style={{ width:40, height:2, background:'linear-gradient(90deg, var(--gold), transparent)', marginTop:10, borderRadius:1 }} />
       </div>
@@ -66,8 +76,8 @@ export default function Dashboard() {
 
       {/* Quick stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:14 }}>
-        <StatCard label="Employees" value={stats.employees} hint="Tracked teachers" />
-        <StatCard label="Holidays" value={stats.holidays} hint="Marked this year" />
+        <StatCard label="Employees" value={stats.employees} hint={`In ${branchLabel(currentBranch)}`} />
+        <StatCard label="Holidays" value={stats.holidays} hint={`Applicable to ${branchLabel(currentBranch)}`} />
         <StatCard label="Today's attendance" value="—" hint="Coming soon" />
         <StatCard label="Kiosk status" value="Not deployed" hint="Coming soon" />
       </div>

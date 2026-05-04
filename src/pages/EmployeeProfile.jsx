@@ -7,6 +7,7 @@ import { validateProfileForm, normaliseProfileForm } from '../lib/validators'
 import { logProfileUpdate, logSensitiveReveal } from '../lib/auditLog'
 import { uploadProfilePhoto } from '../lib/profilePhoto'
 import { listDepartments } from '../lib/departments'
+import { applyBranchFilterArray, isAccessibleArray } from '../lib/branchQuery'
 import DocumentsTab from '../components/DocumentsTab'
 
 // ============================================================================
@@ -22,7 +23,7 @@ export default function EmployeeProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { user, isSuperAdmin } = useAuth()
+  const { user, isSuperAdmin, effectiveBranches } = useAuth()
   const toast = useToast()
 
   const isEditing = searchParams.get('edit') === '1'
@@ -83,6 +84,15 @@ export default function EmployeeProfile() {
         .eq('id', id)
         .single()
       if (e1) throw e1
+
+      // Defensive: prevent URL-tampering access. A branch admin who guesses
+      // the URL of an employee at the other branch should be blocked here.
+      if (!isAccessibleArray(data.branch_codes, effectiveBranches)) {
+        toast.show("You don't have access to this employee", 'error')
+        navigate('/employees')
+        return
+      }
+
       setEmployee(data)
 
       if (data?.reporting_manager_id) {
@@ -109,14 +119,17 @@ export default function EmployeeProfile() {
   useEffect(() => {
     if (!isEditing || allEmployees.length > 0 || !supabaseAdmin) return
     ;(async () => {
-      const { data } = await supabaseAdmin
+      // Only show managers the current user can see (branch-scoped)
+      let q = supabaseAdmin
         .from('employees')
-        .select('id, full_name, designation, is_active')
+        .select('id, full_name, designation, is_active, branch_codes')
         .eq('is_active', true)
         .order('full_name', { ascending: true })
+      q = applyBranchFilterArray(q, effectiveBranches)
+      const { data } = await q
       setAllEmployees(data || [])
     })()
-  }, [isEditing])
+  }, [isEditing, effectiveBranches])
 
   function enterEdit() {
     setSearchParams({ edit: '1' })
