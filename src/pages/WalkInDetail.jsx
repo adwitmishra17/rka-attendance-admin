@@ -14,6 +14,8 @@ import {
   listCandidateTags,
   listCandidateAuditLog,
 } from '../lib/candidates'
+import { isAccessible } from '../lib/branchQuery'
+import { branchLabel } from '../lib/branch'
 
 // ============================================================================
 // WALK-IN DETAIL PAGE
@@ -29,7 +31,7 @@ const STATUSES = ['applied', 'shortlisted', 'interviewing', 'offered', 'hired', 
 export default function WalkInDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { user, isAdmin, isReceptionist } = useAuth()
+  const { user, isAdmin, isReceptionist, effectiveBranches } = useAuth()
   const toast = useToast()
 
   const [candidate, setCandidate] = useState(null)
@@ -61,6 +63,15 @@ export default function WalkInDetail() {
         listCandidateDocuments(id),
         listCandidateTags(),
       ])
+
+      // Defensive: prevent URL-tampering access. Receptionists/admins from
+      // the other branch should be blocked here, even if they guess the URL.
+      if (!isAccessible(c.branch_code, effectiveBranches)) {
+        toast.show("You don't have access to this walk-in", 'error')
+        navigate('/walkins')
+        return
+      }
+
       setCandidate(c)
       setDocuments(docs)
       setTags(t)
@@ -217,8 +228,26 @@ export default function WalkInDetail() {
               {candidate.phone && <> · {candidate.phone}</>}
               {candidate.email && <> · {candidate.email}</>}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>
-              Walked in {new Date(candidate.walked_in_at).toLocaleString('en-IN')} · Captured by {candidate.captured_by_email}
+            <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span>Walked in {new Date(candidate.walked_in_at).toLocaleString('en-IN')}</span>
+              <span>·</span>
+              <span>Captured by {candidate.captured_by_email}</span>
+              {candidate.branch_code && (
+                <>
+                  <span>·</span>
+                  <span style={{
+                    fontSize: 9.5, fontWeight: 600,
+                    padding: '1px 7px',
+                    background: 'var(--green-light)',
+                    color: 'var(--green-dark)',
+                    borderRadius: 999,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                  }}>
+                    {branchLabel(candidate.branch_code)}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -89,10 +89,14 @@ export async function deleteCandidateTag({ id }) {
 
 /**
  * List candidates. Options:
- *   onlyRecent: true  — limit to last 30 days (for receptionists)
- *   capturedByEmail   — only those captured by this user
- *   status            — filter by status
- *   includeArchived   — include status='archived'
+ *   onlyRecent: true           — limit to last 30 days (for receptionists)
+ *   capturedByEmail            — only those captured by this user
+ *   status                     — filter by status
+ *   includeArchived            — include status='archived'
+ *   effectiveBranches: string[] — REQUIRED for callers that need branch
+ *                                 isolation. Pass auth.effectiveBranches.
+ *                                 If omitted, no branch filter is applied
+ *                                 (only safe for trusted internal calls).
  */
 export async function listCandidates(options = {}) {
   if (!supabaseAdmin) throw new Error('Admin client not initialised')
@@ -100,7 +104,7 @@ export async function listCandidates(options = {}) {
     .from('candidates')
     .select(`
       id, full_name, phone, email, status, walked_in_at,
-      captured_by_email, tag_id, converted_to_employee_id, source,
+      captured_by_email, tag_id, converted_to_employee_id, source, branch_code,
       tag:candidate_tags (id, name)
     `)
     .is('deleted_at', null)
@@ -118,6 +122,14 @@ export async function listCandidates(options = {}) {
   }
   if (!options.includeArchived) {
     q = q.neq('status', 'archived')
+  }
+  if (Array.isArray(options.effectiveBranches)) {
+    if (options.effectiveBranches.length === 0) {
+      // Defensive: empty means "no access" — return zero rows
+      q = q.eq('branch_code', '__no_access__')
+    } else {
+      q = q.in('branch_code', options.effectiveBranches)
+    }
   }
 
   const { data, error } = await q
@@ -141,11 +153,18 @@ export async function getCandidate(id) {
 
 /**
  * Create a candidate (initial walk-in capture).
+ *
+ * branchCode is REQUIRED — every walk-in happens at exactly one branch.
+ * The caller derives it from the current branch context (a receptionist's
+ * single branch, or the super admin's currently-selected branch).
  */
-export async function createCandidate({ fullName, phone, email, tagId, capturedByEmail, source = 'walk_in' }) {
+export async function createCandidate({ fullName, phone, email, tagId, capturedByEmail, source = 'walk_in', branchCode }) {
   if (!supabaseAdmin) throw new Error('Admin client not initialised')
   if (!fullName?.trim()) throw new Error('Name is required')
   if (!capturedByEmail) throw new Error('Captured-by email required')
+  if (!branchCode || !['MAIN', 'CITY'].includes(branchCode)) {
+    throw new Error('Branch is required — switch to a specific branch first')
+  }
 
   const insert = {
     full_name: fullName.trim(),
@@ -155,6 +174,7 @@ export async function createCandidate({ fullName, phone, email, tagId, capturedB
     captured_by_email: capturedByEmail,
     source,
     status: 'applied',
+    branch_code: branchCode,
   }
   const { data, error } = await supabaseAdmin
     .from('candidates').insert(insert).select().single()
@@ -349,7 +369,7 @@ export async function convertToEmployee({ candidateId, convertedByEmail }) {
     throw new Error('This candidate has already been converted')
   }
 
-  // 1. Create stub employee
+  // 1. Create stub employee — inherit branch from the candidate
   const { data: employee, error: empErr } = await supabaseAdmin
     .from('employees')
     .insert({
@@ -359,6 +379,7 @@ export async function convertToEmployee({ candidateId, convertedByEmail }) {
       email: null,                              // work email assigned later
       personal_email: candidate.email || null,
       is_active: true,
+      branch_codes: [candidate.branch_code],
       created_by: convertedByEmail,
       updated_by: convertedByEmail,
     })

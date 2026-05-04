@@ -22,7 +22,7 @@ import {
 // ============================================================================
 
 export default function WalkIns() {
-  const { user, isReceptionist, isAdmin } = useAuth()
+  const { user, isReceptionist, isAdmin, currentBranch, effectiveBranches } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
 
@@ -34,7 +34,7 @@ export default function WalkIns() {
   const [search, setSearch] = useState('')
   const [showAdd, setShowAdd] = useState(false)
 
-  useEffect(() => { reload() }, [])
+  useEffect(() => { reload() }, [effectiveBranches])
   useEffect(() => {
     listCandidateTags().then(setTags).catch(() => setTags([]))
   }, [])
@@ -44,8 +44,8 @@ export default function WalkIns() {
     try {
       // Receptionists: scoped to their captures, last 30 days only
       const opts = isReceptionist
-        ? { onlyRecent: true, capturedByEmail: user?.email, includeArchived: false }
-        : { includeArchived: statusFilter === 'all' || statusFilter === 'archived' }
+        ? { onlyRecent: true, capturedByEmail: user?.email, includeArchived: false, effectiveBranches }
+        : { includeArchived: statusFilter === 'all' || statusFilter === 'archived', effectiveBranches }
       const data = await listCandidates(opts)
       setItems(data)
     } catch (e) {
@@ -159,7 +159,7 @@ export default function WalkIns() {
       ) : (
         <div style={{ display: 'grid', gap: 8 }}>
           {filtered.map(c => (
-            <CandidateRow key={c.id} candidate={c} onClick={() => navigate(`/walkins/${c.id}`)} />
+            <CandidateRow key={c.id} candidate={c} showBranch={effectiveBranches.length > 1} onClick={() => navigate(`/walkins/${c.id}`)} />
           ))}
         </div>
       )}
@@ -169,6 +169,7 @@ export default function WalkIns() {
         <AddWalkinModal
           tags={tags}
           user={user}
+          currentBranch={currentBranch}
           onClose={() => setShowAdd(false)}
           onSaved={(newId) => {
             setShowAdd(false)
@@ -187,7 +188,7 @@ export default function WalkIns() {
 // LIST ROW
 // ----------------------------------------------------------------------------
 
-function CandidateRow({ candidate, onClick }) {
+function CandidateRow({ candidate, showBranch, onClick }) {
   const ago = relativeTime(candidate.walked_in_at)
   return (
     <div
@@ -225,6 +226,19 @@ function CandidateRow({ candidate, onClick }) {
           <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>
             {candidate.full_name}
           </div>
+          {showBranch && candidate.branch_code && (
+            <span style={{
+              fontSize: 9.5, fontWeight: 600,
+              padding: '1px 7px',
+              background: 'var(--green-light)',
+              color: 'var(--green-dark)',
+              borderRadius: 999,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}>
+              {candidate.branch_code}
+            </span>
+          )}
           {candidate.tag?.name && (
             <span style={{
               fontSize: 10, fontWeight: 600,
@@ -316,7 +330,7 @@ function EmptyState({ onAdd }) {
 // ADD WALK-IN MODAL
 // ============================================================================
 
-function AddWalkinModal({ tags, user, onClose, onSaved }) {
+function AddWalkinModal({ tags, user, currentBranch, onClose, onSaved }) {
   const toast = useToast()
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
@@ -325,6 +339,10 @@ function AddWalkinModal({ tags, user, onClose, onSaved }) {
   const [files, setFiles] = useState([])  // captured photos / uploaded CV
   const [submitting, setSubmitting] = useState(false)
   const fileInputRef = useRef(null)
+
+  // Branch must be set to capture a walk-in. Super admin on All Branches
+  // sees a banner asking them to pick a branch first.
+  const branchMissing = !currentBranch
 
   function handleFilesPicked(e) {
     const picked = Array.from(e.target.files || [])
@@ -346,15 +364,20 @@ function AddWalkinModal({ tags, user, onClose, onSaved }) {
       toast.show('Not logged in', 'error')
       return
     }
+    if (branchMissing) {
+      toast.show('Switch to a specific branch in the topbar first', 'error')
+      return
+    }
     setSubmitting(true)
     try {
-      // 1. Create candidate
+      // 1. Create candidate — branch_code stamped from current branch context
       const candidate = await createCandidate({
         fullName: fullName.trim(),
         phone: phone.trim() || null,
         email: email.trim() || null,
         tagId: tagId || null,
         capturedByEmail: user.email,
+        branchCode: currentBranch,
       })
 
       // 2. Upload files (sequentially, simple)
@@ -380,6 +403,17 @@ function AddWalkinModal({ tags, user, onClose, onSaved }) {
   return (
     <Modal open={true} onClose={onClose} title="New walk-in">
       <div style={{ padding: '4px 20px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {branchMissing && (
+          <div style={{
+            padding: '10px 12px',
+            background: 'var(--crimson-light)',
+            border: '1px solid rgba(139,26,26,0.25)',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 12, color: 'var(--crimson)', lineHeight: 1.5,
+          }}>
+            Switch to a specific branch in the topbar before capturing a walk-in. Walk-ins are tied to one branch.
+          </div>
+        )}
         <Field label="Full name" required>
           <input
             type="text"
@@ -486,7 +520,7 @@ function AddWalkinModal({ tags, user, onClose, onSaved }) {
         {/* Action row */}
         <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
           <button onClick={onClose} disabled={submitting} style={btnSecondary}>Cancel</button>
-          <button onClick={submit} disabled={submitting || !fullName.trim()} style={{ ...btnPrimary, flex: 1 }}>
+          <button onClick={submit} disabled={submitting || !fullName.trim() || branchMissing} style={{ ...btnPrimary, flex: 1, opacity: branchMissing ? 0.5 : 1 }}>
             {submitting ? 'Saving…' : 'Save walk-in'}
           </button>
         </div>
