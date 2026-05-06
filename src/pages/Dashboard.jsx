@@ -5,37 +5,135 @@ import { applyBranchFilterArray, applyBranchFilterNullable } from '../lib/branch
 import { branchLabel } from '../lib/branch'
 import ExpiryWidget from '../components/ExpiryWidget'
 
+// "Today" computed in Asia/Kolkata so the date boundary matches the device's
+// local clock and the trigger that populates attendance_daily.
+function todayInKolkata() {
+  // 'en-CA' formats as YYYY-MM-DD
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+}
+
+// Minutes since a UTC ISO timestamp string. Returns null if input is null/invalid.
+function minutesAgo(isoString) {
+  if (!isoString) return null
+  const t = new Date(isoString).getTime()
+  if (Number.isNaN(t)) return null
+  return Math.floor((Date.now() - t) / 60000)
+}
+
+// "5m ago", "2h ago", "yesterday" — humanized relative time
+function relTime(mins) {
+  if (mins == null) return '—'
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days === 1) return 'yesterday'
+  return `${days}d ago`
+}
+
 export default function Dashboard() {
   const { user, isSuperAdmin, currentBranch, effectiveBranches } = useAuth()
-  const [stats, setStats] = useState({ employees: '—', holidays: '—' })
+  const [stats, setStats] = useState({
+    employees: '—',
+    holidays: '—',
+    presentToday: null,        // number of employees with status='present' today
+    totalActive: null,         // total active employees in scope
+    deviceLastSeen: null,      // ISO string of most recent event_time
+    deviceCount: 0,            // distinct kiosk_device_id count
+  })
   const [supabaseStatus, setSupabaseStatus] = useState('checking')
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false
+    async function load() {
       try {
-        // Counts respect the current branch view.
+        const today = todayInKolkata()
+
         // employees: branch_codes is an ARRAY, use overlaps()
-        // holidays:  branch_code nullable, NULL = applies to both
         let empQ = supabase.from('employees').select('id', { count: 'exact', head: true })
         empQ = applyBranchFilterArray(empQ, effectiveBranches)
 
+        // active employees only — denominator for "X of Y present"
+        let activeQ = supabase.from('employees').select('id', { count: 'exact', head: true }).eq('is_active', true)
+        activeQ = applyBranchFilterArray(activeQ, effectiveBranches)
+
+        // holidays: branch_code nullable, NULL = applies to both
         let holQ = supabase.from('holidays').select('id', { count: 'exact', head: true })
         holQ = applyBranchFilterNullable(holQ, effectiveBranches)
 
-        const [emp, hol] = await Promise.all([empQ, holQ])
+        // present today: count of attendance_daily rows for today with status='present'
+        // attendance_daily.branch_code is NOT NULL single-value, so .in() with the
+        // effective branch list handles both single-branch and All-Branches views.
+        let presentQ = supabase
+          .from('attendance_daily')
+          .select('id', { count: 'exact', head: true })
+          .eq('date', today)
+          .eq('status', 'present')
+        if (effectiveBranches.length > 0) presentQ = presentQ.in('branch_code', effectiveBranches)
+
+        // device status: most recent event_time + count of distinct devices
+        // We grab a small window of recent events and derive both metrics
+        // client-side (avoids needing a custom RPC for distinct counts).
+        let deviceQ = supabase
+          .from('attendance_events')
+          .select('event_time, kiosk_device_id')
+          .order('event_time', { ascending: false })
+          .limit(50)
+        if (effectiveBranches.length > 0) deviceQ = deviceQ.in('branch_code', effectiveBranches)
+
+        const [emp, active, hol, present, device] = await Promise.all([empQ, activeQ, holQ, presentQ, deviceQ])
+        if (cancelled) return
         if (emp.error) throw emp.error
+        if (active.error) throw active.error
         if (hol.error) throw hol.error
+        if (present.error) throw present.error
+        if (device.error) throw device.error
+
+        const deviceRows = device.data || []
+        const distinctDevices = new Set(deviceRows.map(r => r.kiosk_device_id).filter(Boolean))
+
         setStats({
           employees: emp.count ?? 0,
           holidays: hol.count ?? 0,
+          presentToday: present.count ?? 0,
+          totalActive: active.count ?? 0,
+          deviceLastSeen: deviceRows[0]?.event_time ?? null,
+          deviceCount: distinctDevices.size,
         })
         setSupabaseStatus('connected')
       } catch (e) {
         console.error(e)
-        setSupabaseStatus('error: ' + e.message)
+        if (!cancelled) setSupabaseStatus('error: ' + e.message)
       }
-    })()
+    }
+    load()
+    // Refresh every 30s so the dashboard reflects punches without manual reload.
+    // Cheap — counts + a 50-row select. Aligns with the Attendance page cadence.
+    const interval = setInterval(load, 30_000)
+    return () => { cancelled = true; clearInterval(interval) }
   }, [effectiveBranches])
+
+  // Derive kiosk display from raw stats
+  const lastSeenMins = minutesAgo(stats.deviceLastSeen)
+  const kioskStatus =
+    lastSeenMins == null ? 'Not deployed' :
+    lastSeenMins < 2     ? 'Online'        :
+    lastSeenMins < 30    ? 'Idle'          :
+                           'Offline'
+  const kioskHint =
+    lastSeenMins == null ? 'No device events yet' :
+    lastSeenMins < 2     ? `${stats.deviceCount} device${stats.deviceCount === 1 ? '' : 's'} reachable` :
+                           `Last event ${relTime(lastSeenMins)}`
+
+  // Derive attendance display
+  const attendanceValue =
+    stats.presentToday == null || stats.totalActive == null ? '—' :
+    `${stats.presentToday} / ${stats.totalActive}`
+  const attendanceHint =
+    stats.presentToday == null ? 'Loading…' :
+    stats.totalActive === 0    ? 'No active employees' :
+                                  'Marked in today'
 
   return (
     <div style={{ padding:'32px 36px', maxWidth:1200 }}>
@@ -72,14 +170,19 @@ export default function Dashboard() {
           <StatusPill label="Supabase Database" status={supabaseStatus} />
         </div>
       </div>
-<ExpiryWidget />
+      <ExpiryWidget />
 
       {/* Quick stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:14 }}>
         <StatCard label="Employees" value={stats.employees} hint={`In ${branchLabel(currentBranch)}`} />
         <StatCard label="Holidays" value={stats.holidays} hint={`Applicable to ${branchLabel(currentBranch)}`} />
-        <StatCard label="Today's attendance" value="—" hint="Coming soon" />
-        <StatCard label="Kiosk status" value="Not deployed" hint="Coming soon" />
+        <StatCard label="Today's attendance" value={attendanceValue} hint={attendanceHint} />
+        <StatCard
+          label="Biometric kiosk"
+          value={kioskStatus}
+          hint={kioskHint}
+          accent={kioskStatus === 'Online' ? 'green' : kioskStatus === 'Idle' ? 'gold' : kioskStatus === 'Offline' ? 'crimson' : 'muted'}
+        />
       </div>
 
       <div style={{
@@ -90,17 +193,25 @@ export default function Dashboard() {
         borderRadius:'var(--radius-md)',
       }}>
         <div style={{ fontSize:12, fontWeight:600, color:'var(--gold-dark)', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em' }}>
-          v1 — Foundation Phase
+          v2 — Biometric Attendance Live
         </div>
         <p style={{ fontSize:13, color:'var(--text)', lineHeight:1.6 }}>
-          Login and database wiring are working. Next we'll add the Employees page so you can register teachers, then build the kiosk PWA for face recognition.
+          Hikvision device pushes fingerprint punches directly to the HRMS. Daily rollup runs automatically on each event. Next: leave management, salary, and remote enrollment from this dashboard.
         </p>
       </div>
     </div>
   )
 }
 
-function StatCard({ label, value, hint }) {
+function StatCard({ label, value, hint, accent }) {
+  // accent recolours the value text when set: green/gold/crimson/muted.
+  // Default keeps the existing green-dark for backwards compat with other cards.
+  const accentColor =
+    accent === 'green'   ? 'var(--green)' :
+    accent === 'gold'    ? 'var(--gold-dark)' :
+    accent === 'crimson' ? 'var(--crimson)' :
+    accent === 'muted'   ? 'var(--text-muted)' :
+                            'var(--green-dark)'
   return (
     <div style={{
       background:'var(--white)',
@@ -111,7 +222,7 @@ function StatCard({ label, value, hint }) {
       <div style={{ fontSize:10.5, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>
         {label}
       </div>
-      <div style={{ fontSize:26, fontWeight:600, fontFamily:'var(--font-display)', color:'var(--green-dark)', lineHeight:1 }}>
+      <div style={{ fontSize:26, fontWeight:600, fontFamily:'var(--font-display)', color:accentColor, lineHeight:1 }}>
         {value}
       </div>
       {hint && <div style={{ fontSize:10.5, color:'var(--text-muted)', marginTop:4 }}>{hint}</div>}
