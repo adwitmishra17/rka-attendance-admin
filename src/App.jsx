@@ -17,6 +17,7 @@ import Dashboard from './pages/Dashboard'
 import Employees from './pages/Employees'
 import EmployeeProfile from './pages/EmployeeProfile'
 import Attendance from './pages/Attendance'
+import MonthlyReport from './pages/MonthlyReport'
 import Holidays from './pages/Holidays'
 import ReportingTime from './pages/ReportingTime'
 import FaceEnrollment from './pages/FaceEnrollment'
@@ -25,6 +26,7 @@ import WalkIns from './pages/WalkIns'
 import WalkInDetail from './pages/WalkInDetail'
 import RecruitmentTags from './pages/RecruitmentTags'
 import AdminUsers from './pages/AdminUsers'
+import MonthlyReport from './pages/MonthlyReport'
 
 export const SUPER_ADMIN_EMAIL = 'adwit@rkacademyballia.in'
 
@@ -162,6 +164,7 @@ export default function App() {
           <Route path="employees" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Employees />} />
           <Route path="employees/:id" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <EmployeeProfile />} />
           <Route path="attendance" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Attendance />} />
+          <Route path="reports/monthly" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <MonthlyReport />} />
           <Route path="holidays" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Holidays />} />
           <Route path="reporting-time" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <ReportingTime />} />
           <Route path="face-enrollment" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <FaceEnrollment />} />
