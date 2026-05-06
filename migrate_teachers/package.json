@@ -1,0 +1,15 @@
+{
+  "name": "migrate-teachers",
+  "version": "1.0.0",
+  "description": "One-time migration: copy teachers from rka-academic-tracker Firestore to HRMS Supabase as stub employees",
+  "type": "module",
+  "scripts": {
+    "dry-run": "node migrate_teachers.js --dry-run",
+    "migrate": "node migrate_teachers.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.3.1"
+  }
+}

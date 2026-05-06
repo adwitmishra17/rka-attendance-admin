@@ -1,0 +1,222 @@
+============================================================================
+TEACHER MIGRATION — APPLY GUIDE
+============================================================================
+
+WHAT THIS DOES
+==============
+Reads all teachers from rka-academic-tracker Firestore `teachers` collection,
+inserts each as a stub employee in HRMS Supabase `employees` table with:
+  - full_name from tracker fullName
+  - email from tracker email
+  - department_id = Teachers UUID (67c56fb0-3daa-432b-a3f3-f2f2c9c3546f)
+  - is_active = true
+
+WHAT THIS DOES NOT DO
+=====================
+- Does NOT touch tracker data — pure read.
+- Does NOT migrate phone, photo, subjectsTaught, classesAssigned.
+  (Those move later in Phase A when we rewrite tracker integration.)
+- Does NOT delete or modify existing HRMS employees.
+- Skips any teacher whose email already exists in HRMS (idempotent).
+
+
+WHAT'S IN THIS ZIP
+==================
+  APPLY_GUIDE.txt          ← this file
+  migrate_teachers/
+    package.json           ← npm dependencies
+    migrate_teachers.js    ← the migration script
+
+
+SETUP STEPS
+===========
+
+1. Place the migrate_teachers folder inside your repo root:
+
+      cp -r ~/Downloads/migrate_teachers ~/Documents/RKA/rka-attendance-admin/
+
+   So the final structure is:
+      ~/Documents/RKA/rka-attendance-admin/
+        ├── secrets/
+        │   └── rka-academic-tracker-firebase-adminsdk-XXX.json
+        ├── migrate_teachers/
+        │   ├── package.json
+        │   └── migrate_teachers.js
+        ├── src/
+        ├── .env.local
+        └── .gitignore     ← already updated; secrets/ excluded
+
+2. Verify the script can find your service account JSON:
+
+      ls ~/Documents/RKA/rka-attendance-admin/secrets/
+
+   The script expects the file named exactly:
+      rka-academic-tracker-firebase-adminsdk.json
+
+   If your downloaded file has a different name (e.g.,
+   rka-academic-tracker-firebase-adminsdk-fbsvc-abc123.json), either:
+
+     OPTION A: Rename it
+       cd ~/Documents/RKA/rka-attendance-admin/secrets
+       mv rka-academic-tracker-firebase-adminsdk-fbsvc-*.json \
+          rka-academic-tracker-firebase-adminsdk.json
+
+     OPTION B: Pass the path via env var (Step 4)
+
+3. Install dependencies:
+
+      cd ~/Documents/RKA/rka-attendance-admin/migrate_teachers
+      npm install
+
+   Takes ~30 seconds. Installs firebase-admin and @supabase/supabase-js.
+
+4. Run the dry run first:
+
+      cd ~/Documents/RKA/rka-attendance-admin/migrate_teachers
+      node migrate_teachers.js --dry-run
+
+   If you used OPTION B above, run with the env var:
+      SERVICE_ACCOUNT_PATH=../secrets/rka-academic-tracker-firebase-adminsdk-fbsvc-XXX.json \
+        node migrate_teachers.js --dry-run
+
+   This prints a plan: which teachers will be inserted, which skipped, why.
+   No data is written.
+
+5. Review the dry-run output carefully:
+
+   - Check the total teacher count (should match tracker)
+   - Look at the names and emails — do they match what you expect?
+   - Note any "[no email]" entries — those teachers won't be inserted
+   - Note any "[exists]" entries — those are already in HRMS
+
+   If anything looks wrong, fix the source data in the tracker first, OR
+   tell me and we adjust the script.
+
+6. Run the live migration:
+
+      node migrate_teachers.js
+
+   (Or with SERVICE_ACCOUNT_PATH env var if needed.)
+
+   This actually writes to HRMS. Each insert prints a success line with the
+   new employee UUID.
+
+7. Verify in Supabase:
+
+   Open HRMS at https://hrms.rkacademyballia.in
+   → Employees page
+   → Filter by Teachers department
+   → You should see all migrated teachers as new employee rows
+   → Each will have: name, email, department=Teachers, is_active=true
+   → All other fields blank (employee_code, designation, etc. — fill in later)
+
+8. Save the mapping file (already auto-saved):
+
+      ls ~/Documents/RKA/rka-attendance-admin/migrate_teachers/tracker_to_hrms_id.json
+
+   This file is gitignored. Keep it safe — Phase A will use it to migrate
+   subjectsTaught and classesAssigned later.
+
+
+WHAT TO EXPECT
+==============
+
+Successful run example:
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Teacher Migration: tracker → HRMS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Mode:              ✏️  LIVE (will write)
+    Firebase project:  rka-academic-tracker
+    Supabase URL:      https://XXX.supabase.co
+    Teachers dept ID:  67c56fb0-3daa-432b-a3f3-f2f2c9c3546f
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  📥 Reading teachers from tracker Firestore...
+     Found 30 teachers
+
+  📥 Reading existing HRMS employee emails...
+     Found 0 existing employees with email
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Migration Plan
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Total tracker teachers:   30
+    Will insert into HRMS:    28
+    Will skip:                2
+
+    ➕ TO INSERT:
+       ✓  Amit Gupta                     amit.gupta@rkacademyballia.in
+       ✓  Vivek Singh                    vivek@rkacademyballia.in
+       ...
+
+    ⏭  TO SKIP:
+       -  Old Teacher                    [no email] tracker doc has no email
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    ✏️  Writing to HRMS...
+
+       ✓  Amit Gupta                     → 1f3d8a9b-...
+       ✓  Vivek Singh                    → 4c5d6e7f-...
+       ...
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Summary
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Inserted:     28
+    Skipped:      2
+    Failed:       0
+    Mapping file: /Users/.../tracker_to_hrms_id.json
+
+    ✓ Migration complete.
+
+
+WHAT COULD GO WRONG
+===================
+
+"Could not load service account JSON"
+  → The script can't find the file. Check the path. Either rename to
+    `rka-academic-tracker-firebase-adminsdk.json` or use SERVICE_ACCOUNT_PATH
+    env var.
+
+"VITE_SUPABASE_URL not found in .env.local"
+  → The script reads .env.local from the repo root. Make sure the
+    migrate_teachers folder is INSIDE rka-attendance-admin/, not outside.
+
+"7 PERMISSION_DENIED: Missing or insufficient permissions"
+  → Service account doesn't have Firestore read access. Check Firebase
+    Console → IAM. The default service account should have it; if it
+    doesn't, generate a fresh one.
+
+"new row violates row-level security policy"
+  → Supabase service role key isn't being used. Check VITE_SUPABASE_SERVICE_ROLE_KEY
+    in .env.local has a value (long JWT-style string starting with `eyJ`).
+
+"function gen_random_uuid() does not exist"
+  → Should not happen since Phase 1 schema set this up. If it does, run:
+       CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+Inserted some teachers, then failed midway
+  → The mapping file is saved at the end. If it fails partway, partial
+    inserts are NOT rolled back. Re-run the script — the idempotency
+    check will skip already-inserted teachers and continue with the rest.
+
+Some teachers have wrong department_id
+  → If you accidentally inserted teachers into the wrong department, fix in
+    Supabase SQL editor:
+       UPDATE employees
+       SET department_id = '67c56fb0-3daa-432b-a3f3-f2f2c9c3546f'
+       WHERE id IN ('uuid1', 'uuid2', ...);
+
+
+AFTER MIGRATION
+===============
+
+Next phase (per roadmap): Phase A.5 — extend tracker admin page to handle
+receptionist role + branch_code field.
+
+Until Phase A is done, the tracker still uses its own teachers collection.
+HRMS now has the same teachers as stubs. Tracker and HRMS run independently.
+
+The migration is one-way and doesn't break either app.
