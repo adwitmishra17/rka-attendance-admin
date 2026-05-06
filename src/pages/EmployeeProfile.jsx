@@ -9,6 +9,7 @@ import { uploadProfilePhoto } from '../lib/profilePhoto'
 import { listDepartments } from '../lib/departments'
 import { applyBranchFilterArray, isAccessibleArray } from '../lib/branchQuery'
 import DocumentsTab from '../components/DocumentsTab'
+import EmployeeAttendance from './EmployeeAttendance'
 
 // ============================================================================
 // EMPLOYEE PROFILE PAGE
@@ -118,17 +119,17 @@ export default function EmployeeProfile() {
   // Fetch employee list for reporting-manager dropdown — only when entering edit mode
   useEffect(() => {
     if (!isEditing || allEmployees.length > 0 || !supabaseAdmin) return
-    ;(async () => {
-      // Only show managers the current user can see (branch-scoped)
-      let q = supabaseAdmin
-        .from('employees')
-        .select('id, full_name, designation, is_active, branch_codes')
-        .eq('is_active', true)
-        .order('full_name', { ascending: true })
-      q = applyBranchFilterArray(q, effectiveBranches)
-      const { data } = await q
-      setAllEmployees(data || [])
-    })()
+      ; (async () => {
+        // Only show managers the current user can see (branch-scoped)
+        let q = supabaseAdmin
+          .from('employees')
+          .select('id, full_name, designation, is_active, branch_codes')
+          .eq('is_active', true)
+          .order('full_name', { ascending: true })
+        q = applyBranchFilterArray(q, effectiveBranches)
+        const { data } = await q
+        setAllEmployees(data || [])
+      })()
   }, [isEditing, effectiveBranches])
 
   function enterEdit() {
@@ -241,7 +242,7 @@ export default function EmployeeProfile() {
   }
 
   if (loading) return <PageLoader />
-  if (error)   return <PageError msg={error} onBack={() => navigate('/employees')} />
+  if (error) return <PageError msg={error} onBack={() => navigate('/employees')} />
   if (!employee) return <PageError msg="Employee not found" onBack={() => navigate('/employees')} />
 
   // Use form values when editing, snapshot otherwise
@@ -281,10 +282,10 @@ export default function EmployeeProfile() {
           overflowX: 'auto',
         }}>
           {[
-            { key: 'overview',   label: 'Overview' },
-            { key: 'documents',  label: 'Documents' },
+            { key: 'overview', label: 'Overview' },
+            { key: 'documents', label: 'Documents' },
             { key: 'attendance', label: 'Attendance' },
-            { key: 'history',    label: 'History' },
+            { key: 'history', label: 'History' },
           ].map(t => (
             <button
               key={t.key}
@@ -335,9 +336,9 @@ export default function EmployeeProfile() {
               onReveal={reveal}
             />
           )}
-          {activeTab === 'documents'  && <DocumentsTab employee={employee} />}
-          {activeTab === 'attendance' && <AttendanceTab />}
-          {activeTab === 'history'    && <HistoryTab employee={employee} />}
+          {activeTab === 'documents' && <DocumentsTab employee={employee} />}
+          {activeTab === 'attendance' && <EmployeeAttendance employeeId={employee?.id} />}
+          {activeTab === 'history' && <HistoryTab employee={employee} />}
         </>
       )}
     </div>
@@ -424,8 +425,8 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
                 }} />
               ) : (
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                  <circle cx="12" cy="13" r="4"/>
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
                 </svg>
               )}
             </button>
@@ -476,9 +477,9 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
           textTransform: 'uppercase',
           flexWrap: 'wrap',
         }}>
-          {employee.employee_code  && <span>Code: {employee.employee_code}</span>}
+          {employee.employee_code && <span>Code: {employee.employee_code}</span>}
           {employee.biometric_code && <span>Bio: {employee.biometric_code}</span>}
-          {employee.email          && <span>{employee.email}</span>}
+          {employee.email && <span>{employee.email}</span>}
         </div>
         {!isEditing && employee.updated_by && (
           <div style={{
@@ -497,8 +498,8 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
         {!isEditing ? (
           <button onClick={onEdit} style={btnPrimary}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
             </svg>
             Edit profile
           </button>
@@ -874,10 +875,10 @@ function OverviewTab({ employee, reportingManager, departments, canSeeSensitive,
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
       <Section title="Personal info">
-        <Field label="Full name"      value={employee.full_name} />
-        <Field label="Date of birth"  value={fmtDate(employee.date_of_birth)} />
-        <Field label="Gender"         value={fmtGender(employee.gender)} />
-        <Field label="Blood group"    value={employee.blood_group} />
+        <Field label="Full name" value={employee.full_name} />
+        <Field label="Date of birth" value={fmtDate(employee.date_of_birth)} />
+        <Field label="Gender" value={fmtGender(employee.gender)} />
+        <Field label="Blood group" value={employee.blood_group} />
         <Field label="Marital status" value={fmtTitle(employee.marital_status)} />
         {employee.marital_status === 'married' && (
           <Field label="Spouse name" value={employee.spouse_name} />
@@ -887,12 +888,12 @@ function OverviewTab({ employee, reportingManager, departments, canSeeSensitive,
       </Section>
 
       <Section title="Contact">
-        <Field label="Work email"      value={employee.email} />
-        <Field label="Personal email"  value={employee.personal_email} />
-        <Field label="Work phone"      value={employee.phone} />
-        <Field label="Personal phone"  value={employee.personal_phone} />
+        <Field label="Work email" value={employee.email} />
+        <Field label="Personal email" value={employee.personal_email} />
+        <Field label="Work phone" value={employee.phone} />
+        <Field label="Personal phone" value={employee.personal_phone} />
         <Field label="Permanent address" value={employee.permanent_address} multiline />
-        <Field label="Current address"   value={employee.current_address} multiline />
+        <Field label="Current address" value={employee.current_address} multiline />
         <Field label="Emergency contact" multiline value={
           employee.emergency_contact_name
             ? `${employee.emergency_contact_name} (${employee.emergency_contact_relation || 'relative'}) — ${employee.emergency_contact_phone || 'no phone'}`
@@ -901,12 +902,12 @@ function OverviewTab({ employee, reportingManager, departments, canSeeSensitive,
       </Section>
 
       <Section title="Employment">
-        <Field label="Employee code"   value={employee.employee_code} />
-        <Field label="Biometric code"  value={employee.biometric_code} />
-        <Field label="Designation"     value={employee.designation} />
-        <Field label="Department"      value={departmentDisplay} />
+        <Field label="Employee code" value={employee.employee_code} />
+        <Field label="Biometric code" value={employee.biometric_code} />
+        <Field label="Designation" value={employee.designation} />
+        <Field label="Department" value={departmentDisplay} />
         <Field label="Employment type" value={fmtTitle(employee.employment_type)} />
-        <Field label="Joining date"      value={fmtDate(employee.joining_date)} />
+        <Field label="Joining date" value={fmtDate(employee.joining_date)} />
         <Field label="Confirmation date" value={fmtDate(employee.confirmation_date)} />
         {employee.leaving_date && (
           <Field label="Leaving date" value={fmtDate(employee.leaving_date)} />
@@ -924,15 +925,15 @@ function OverviewTab({ employee, reportingManager, departments, canSeeSensitive,
 
       {hasTeaching && (
         <Section title="Teaching">
-          <Field label="Subjects taught"  value={employee.subjects_taught?.join(', ')} />
+          <Field label="Subjects taught" value={employee.subjects_taught?.join(', ')} />
           <Field label="Classes assigned" value={employee.classes_assigned?.join(', ')} />
         </Section>
       )}
 
       <Section title="Education">
         <Field label="Highest qualification" value={employee.highest_qualification} />
-        <Field label="Year"                  value={employee.qualification_year} />
-        <Field label="Institution"           value={employee.qualification_institution} />
+        <Field label="Year" value={employee.qualification_year} />
+        <Field label="Institution" value={employee.qualification_institution} />
         <Field
           label="Years of experience"
           value={employee.years_of_experience != null
@@ -961,14 +962,14 @@ function OverviewTab({ employee, reportingManager, departments, canSeeSensitive,
       </Section>
 
       <Section title="Custom timing">
-        <Field label="In time"        value={fmtTime(employee.custom_in_time)} />
-        <Field label="Out time"       value={fmtTime(employee.custom_out_time)} />
-        <Field label="Grace minutes"  value={employee.custom_grace_minutes} />
+        <Field label="In time" value={fmtTime(employee.custom_in_time)} />
+        <Field label="Out time" value={fmtTime(employee.custom_out_time)} />
+        <Field label="Grace minutes" value={employee.custom_grace_minutes} />
       </Section>
 
       {canSeeSensitive && (
         <Section title="Bank account" badge="Super admin only">
-          <Field label="Bank"   value={employee.bank_name} />
+          <Field label="Bank" value={employee.bank_name} />
           <Field label="Branch" value={employee.bank_branch} />
           <RevealableField
             label="Account no"
@@ -984,21 +985,21 @@ function OverviewTab({ employee, reportingManager, departments, canSeeSensitive,
 
       {canSeeSensitive && (
         <Section title="Compensation" badge="Super admin only">
-          <Field label="Basic salary"     value={fmtMoney(employee.basic_salary)} />
-          <Field label="HRA"              value={fmtMoney(employee.hra)} />
+          <Field label="Basic salary" value={fmtMoney(employee.basic_salary)} />
+          <Field label="HRA" value={fmtMoney(employee.hra)} />
           <Field label="Other allowances" value={fmtMoney(employee.other_allowances)} />
           <Field label="Total" value={
             (employee.basic_salary != null || employee.hra != null || employee.other_allowances != null)
               ? fmtMoney(
-                  Number(employee.basic_salary || 0) +
-                  Number(employee.hra || 0) +
-                  Number(employee.other_allowances || 0)
-                )
+                Number(employee.basic_salary || 0) +
+                Number(employee.hra || 0) +
+                Number(employee.other_allowances || 0)
+              )
               : null
           } />
-          <Field label="PF number"  value={employee.pf_number} />
+          <Field label="PF number" value={employee.pf_number} />
           <Field label="ESI number" value={employee.esi_number} />
-          <Field label="UAN"        value={employee.uan_number} />
+          <Field label="UAN" value={employee.uan_number} />
         </Section>
       )}
 
@@ -1509,10 +1510,10 @@ function maskAccount(a) {
 
 function fmtAuditAction(a) {
   return ({
-    create:         'Created',
-    update:         'Updated',
-    delete:         'Deactivated',
-    restore:        'Reactivated',
+    create: 'Created',
+    update: 'Updated',
+    delete: 'Deactivated',
+    restore: 'Reactivated',
     view_sensitive: 'Viewed sensitive field',
   })[a] || a
 }
@@ -1526,9 +1527,9 @@ function fmtRelative(t) {
   const now = Date.now()
   const then = new Date(t).getTime()
   const diff = Math.floor((now - then) / 1000)
-  if (diff < 60)         return 'just now'
-  if (diff < 3600)       return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400)      return `${Math.floor(diff / 3600)}h ago`
-  if (diff < 86400 * 7)  return `${Math.floor(diff / 86400)}d ago`
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`
   return new Date(t).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 }
