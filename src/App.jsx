@@ -26,7 +26,6 @@ import WalkIns from './pages/WalkIns'
 import WalkInDetail from './pages/WalkInDetail'
 import RecruitmentTags from './pages/RecruitmentTags'
 import AdminUsers from './pages/AdminUsers'
-import MonthlyReport from './pages/MonthlyReport'
 
 export const SUPER_ADMIN_EMAIL = 'adwit@rkacademyballia.in'
 
