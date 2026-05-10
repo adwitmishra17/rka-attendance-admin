@@ -604,9 +604,9 @@ function EmployeeForm({ employee, onClose, onSaved, adminEmail }) {
           hint="Pick one or both. Most teachers belong to a single branch; cross-campus teachers (e.g. principal) can be in both.">
           <div style={{ display: 'flex', gap: 16, paddingTop: 4 }}>
             {BRANCHES.map(bc => {
-              const checked = form.branch_codes.includes(bc)
+              const checked = form.branch_codes.includes(bc.code)
               return (
-                <label key={bc} style={{
+                <label key={bc.code} style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '8px 12px',
                   border: `1px solid ${checked ? 'var(--green-dark)' : 'var(--gray-200)'}`,
@@ -623,13 +623,13 @@ function EmployeeForm({ employee, onClose, onSaved, adminEmail }) {
                     checked={checked}
                     onChange={() => {
                       const next = checked
-                        ? form.branch_codes.filter(b => b !== bc)
-                        : [...form.branch_codes, bc]
+                        ? form.branch_codes.filter(b => b !== bc.code)
+                        : [...form.branch_codes, bc.code]
                       update('branch_codes', next)
                     }}
                     style={{ margin: 0, cursor: 'pointer' }}
                   />
-                  {branchLabel(bc)}
+                  {bc.label}
                 </label>
               )
             })}

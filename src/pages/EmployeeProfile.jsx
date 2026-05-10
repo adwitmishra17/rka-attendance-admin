@@ -1342,16 +1342,16 @@ function Select({ value, onChange, options }) {
 // At least one branch is enforced by the parent's validator.
 function BranchesPicker({ value, onChange }) {
   const arr = Array.isArray(value) ? value : []
-  function toggle(bc) {
-    const next = arr.includes(bc) ? arr.filter(b => b !== bc) : [...arr, bc]
+  function toggle(code) {
+    const next = arr.includes(code) ? arr.filter(b => b !== code) : [...arr, code]
     onChange?.(next)
   }
   return (
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingTop: 2 }}>
       {BRANCHES.map(bc => {
-        const checked = arr.includes(bc)
+        const checked = arr.includes(bc.code)
         return (
-          <label key={bc} style={{
+          <label key={bc.code} style={{
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '7px 12px',
             border: `1px solid ${checked ? 'var(--green-dark)' : 'var(--gray-200)'}`,
@@ -1366,10 +1366,10 @@ function BranchesPicker({ value, onChange }) {
             <input
               type="checkbox"
               checked={checked}
-              onChange={() => toggle(bc)}
+              onChange={() => toggle(bc.code)}
               style={{ margin: 0, cursor: 'pointer' }}
             />
-            {branchLabel(bc)}
+            {bc.label}
           </label>
         )
       })}
