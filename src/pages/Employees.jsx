@@ -460,6 +460,7 @@ function EmptyState({ search, filter, onAdd }) {
 function EmployeeForm({ employee, onClose, onSaved, adminEmail }) {
   const isEdit = !!employee.id
   const toast = useToast()
+  const { currentBranch } = useAuth()
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     full_name: employee.full_name || '',
@@ -471,6 +472,13 @@ function EmployeeForm({ employee, onClose, onSaved, adminEmail }) {
     custom_out_time: employee.custom_out_time?.slice(0, 5) || '',
     custom_grace_minutes: employee.custom_grace_minutes ?? '',
     is_active: employee.is_active ?? true,
+    // Branches the employee belongs to (array — supports dual-branch teachers).
+    // Pre-fill: existing employee → their current branches; new employee
+    // when sidebar is on a specific branch → that branch; "All Branches" → empty
+    // (validation will require user to pick).
+    branch_codes: (employee.branch_codes && employee.branch_codes.length > 0)
+      ? employee.branch_codes
+      : (currentBranch ? [currentBranch] : []),
   })
   const [errors, setErrors] = useState({})
 
@@ -489,6 +497,10 @@ function EmployeeForm({ employee, onClose, onSaved, adminEmail }) {
     if (form.custom_in_time || form.custom_out_time) {
       if (!form.custom_in_time) errs.custom_in_time = 'In time required if Out time set'
       if (!form.custom_out_time) errs.custom_out_time = 'Out time required if In time set'
+    }
+    // Must belong to at least one branch
+    if (!form.branch_codes || form.branch_codes.length === 0) {
+      errs.branch_codes = 'Pick at least one branch'
     }
     setErrors(errs)
     return Object.keys(errs).length === 0
@@ -512,6 +524,7 @@ function EmployeeForm({ employee, onClose, onSaved, adminEmail }) {
       custom_out_time: form.custom_out_time || null,
       custom_grace_minutes: form.custom_grace_minutes === '' ? null : Number(form.custom_grace_minutes),
       is_active: form.is_active,
+      branch_codes: form.branch_codes,
     }
 
     let res
@@ -586,6 +599,42 @@ function EmployeeForm({ employee, onClose, onSaved, adminEmail }) {
               style={inputStyle} placeholder="e.g. 118" />
           </Field>
         </div>
+
+        <Field label="Branches" required error={errors.branch_codes}
+          hint="Pick one or both. Most teachers belong to a single branch; cross-campus teachers (e.g. principal) can be in both.">
+          <div style={{ display: 'flex', gap: 16, paddingTop: 4 }}>
+            {BRANCHES.map(bc => {
+              const checked = form.branch_codes.includes(bc)
+              return (
+                <label key={bc} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 12px',
+                  border: `1px solid ${checked ? 'var(--green-dark)' : 'var(--gray-200)'}`,
+                  borderRadius: 'var(--radius-sm)',
+                  background: checked ? 'var(--green-light)' : 'var(--white)',
+                  color: checked ? 'var(--green-dark)' : 'var(--text)',
+                  fontSize: 13,
+                  fontWeight: checked ? 500 : 400,
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      const next = checked
+                        ? form.branch_codes.filter(b => b !== bc)
+                        : [...form.branch_codes, bc]
+                      update('branch_codes', next)
+                    }}
+                    style={{ margin: 0, cursor: 'pointer' }}
+                  />
+                  {branchLabel(bc)}
+                </label>
+              )
+            })}
+          </div>
+        </Field>
 
         <div>
           <div style={{

@@ -8,6 +8,7 @@ import { logProfileUpdate, logSensitiveReveal } from '../lib/auditLog'
 import { uploadProfilePhoto } from '../lib/profilePhoto'
 import { listDepartments } from '../lib/departments'
 import { applyBranchFilterArray, isAccessibleArray } from '../lib/branchQuery'
+import { BRANCHES, branchLabel } from '../lib/branch'
 import DocumentsTab from '../components/DocumentsTab'
 import EmployeeAttendance from './EmployeeAttendance'
 
@@ -194,7 +195,12 @@ export default function EmployeeProfile() {
     if (!form) return
     const normalised = normaliseProfileForm(form)
     const { errors: errs, isValid } = validateProfileForm(normalised)
-    if (!isValid) {
+    // Local supplemental validation — validators.js doesn't know about branch_codes yet
+    const branchCodes = Array.isArray(form.branch_codes) ? form.branch_codes : []
+    if (branchCodes.length === 0) {
+      errs.branch_codes = 'Pick at least one branch'
+    }
+    if (!isValid || errs.branch_codes) {
       setErrors(errs)
       toast.show('Please fix the errors below', 'error')
       return
@@ -203,6 +209,9 @@ export default function EmployeeProfile() {
     try {
       const payload = {
         ...normalised,
+        // Defensive: ensure branch_codes survives even if normaliseProfileForm
+        // strips unknown fields. This keeps the column current with the form.
+        branch_codes: branchCodes,
         updated_by: user?.email || null,
         updated_at: new Date().toISOString(),
       }
@@ -630,6 +639,12 @@ function EditMode({ form, errors, revealed, allEmployees, departments, canSeeSen
         </FormField>
         <FormField label="Designation">
           <Input value={form.designation} onChange={v => onUpdate('designation', v)} placeholder="Accountancy Teacher" />
+        </FormField>
+        <FormField label="Branches" error={errors.branch_codes}>
+          <BranchesPicker
+            value={Array.isArray(form.branch_codes) ? form.branch_codes : []}
+            onChange={v => onUpdate('branch_codes', v)}
+          />
         </FormField>
         <FormField label="Department">
           <Select
@@ -1319,6 +1334,46 @@ function Select({ value, onChange, options }) {
         <option key={opt.v} value={opt.v}>{opt.l}</option>
       ))}
     </select>
+  )
+}
+
+// Multi-select for branches. Renders one toggle button per branch in BRANCHES.
+// `value` is an array of branch codes; `onChange(nextArray)` fires on toggle.
+// At least one branch is enforced by the parent's validator.
+function BranchesPicker({ value, onChange }) {
+  const arr = Array.isArray(value) ? value : []
+  function toggle(bc) {
+    const next = arr.includes(bc) ? arr.filter(b => b !== bc) : [...arr, bc]
+    onChange?.(next)
+  }
+  return (
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingTop: 2 }}>
+      {BRANCHES.map(bc => {
+        const checked = arr.includes(bc)
+        return (
+          <label key={bc} style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '7px 12px',
+            border: `1px solid ${checked ? 'var(--green-dark)' : 'var(--gray-200)'}`,
+            borderRadius: 'var(--radius-sm)',
+            background: checked ? 'var(--green-light)' : 'var(--white)',
+            color: checked ? 'var(--green-dark)' : 'var(--text)',
+            fontSize: 13,
+            fontWeight: checked ? 500 : 400,
+            cursor: 'pointer',
+            userSelect: 'none',
+          }}>
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => toggle(bc)}
+              style={{ margin: 0, cursor: 'pointer' }}
+            />
+            {branchLabel(bc)}
+          </label>
+        )
+      })}
+    </div>
   )
 }
 
