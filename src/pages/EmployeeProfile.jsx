@@ -254,37 +254,17 @@ export default function EmployeeProfile() {
         console.warn('Audit log skipped:', auditResult.error)
       }
 
-      // Recompute attendance_daily rows for this employee if their
-      // schedule actually changed. Compare against pre-save snapshot.
-      const timingChanged = (
-        (employee?.custom_in_time      ?? null) !== (updated.custom_in_time      ?? null)
-       || (employee?.custom_out_time    ?? null) !== (updated.custom_out_time    ?? null)
-       || (employee?.custom_grace_minutes ?? null) !== (updated.custom_grace_minutes ?? null)
-      )
-      if (timingChanged) {
-        const { data: n, error: rcErr } = await supabaseAdmin
-          .rpc('recompute_attendance_daily_range', { p_employee_id: id })
-        if (rcErr) {
-          // Save succeeded; flag the recompute failure but don't roll back.
-          toast.show(
-            `Changes saved. Historical recompute failed: ${rcErr.message}`,
-            'error'
-          )
-        } else {
-          toast.show(
-            (n ?? 0) > 0
-              ? `Changes saved · ${n} attendance ${n === 1 ? 'row' : 'rows'} recomputed`
-              : 'Changes saved'
-          )
-        }
-      } else {
-        toast.show('Changes saved')
-      }
+      // Pattern 1 — snapshot at write time. We do NOT bulk-recompute existing
+      // attendance_daily rows for this employee. Each past row keeps the
+      // schedule it was written against. New punches will snapshot the new
+      // custom timings via the trigger. If admin needs to apply the change
+      // retroactively, they edit past days via the Attendance tab.
 
       setEmployee(updated)
       setSearchParams({})
       setForm(null)
       setErrors({})
+      toast.show('Changes saved')
     } catch (e) {
       toast.show('Save failed: ' + e.message, 'error')
     }
@@ -1356,6 +1336,9 @@ function CustomTimingHint({ form, reportingTimeConfigs }) {
       </div>
       Leave fields blank to follow the branch default set under <strong style={{ color: 'var(--text)' }}>Reporting Time</strong>.
       Fill any field to override it for this teacher only — useful for part-time or KG staff with a different schedule.
+      <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed rgba(0,0,0,0.08)', fontSize: 11, lineHeight: 1.5 }}>
+        Changes here apply to <strong>new punches from now on</strong>. Past attendance records keep the schedule they were originally written against.
+      </div>
       {branchCodes.length === 0 && (
         <div style={{ marginTop: 4, color: 'var(--crimson)' }}>
           Branch not set on this employee — defaults can't be resolved yet.

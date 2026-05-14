@@ -544,44 +544,11 @@ function HolidayForm({ holiday, onClose, onSaved, adminEmail }) {
       return
     }
 
-    // Recompute attendance_daily across the affected range × branch scope.
-    // When editing, we also need to cover the OLD range in case the date
-    // window shrank or moved (rows that are no longer holidays must be
-    // un-flagged). So we union the old and new ranges.
-    const ranges = [
-      { start: savedRow.date, end: savedRow.end_date || savedRow.date, branch: savedRow.branch_code },
-    ]
-    if (isEdit && holiday) {
-      ranges.push({
-        start: holiday.date,
-        end: holiday.end_date || holiday.date,
-        branch: holiday.branch_code,
-      })
-    }
-    let recomputedTotal = 0
-    let recomputeFailed = false
-    for (const r of ranges) {
-      const { data: n, error: rcErr } = await supabaseAdmin
-        .rpc('recompute_attendance_daily_range', {
-          p_start_date: r.start,
-          p_end_date: r.end,
-          p_branch_code: r.branch, // null = all branches
-        })
-      if (rcErr) {
-        console.error('Recompute failed:', rcErr)
-        recomputeFailed = true
-      } else {
-        recomputedTotal += (n ?? 0)
-      }
-    }
-
-    if (recomputeFailed) {
-      toast.show('Saved, but historical recompute had errors. Check console.', 'error')
-    } else if (recomputedTotal > 0) {
-      toast.show(`${isEdit ? 'Updated' : 'Added'} · ${recomputedTotal} attendance ${recomputedTotal === 1 ? 'row' : 'rows'} recomputed`)
-    } else {
-      toast.show(isEdit ? 'Holiday updated' : 'Holiday added')
-    }
+    // Pattern 1 — snapshot at write time. New attendance punches on these
+    // dates will pick up is_holiday=true via the trigger's holidays lookup.
+    // Past attendance records on the same dates are NOT retroactively flagged
+    // — admin must edit those rows individually if needed.
+    toast.show(isEdit ? 'Holiday updated' : 'Holiday added')
     setSaving(false)
     onSaved()
   }
@@ -712,6 +679,17 @@ function HolidayForm({ holiday, onClose, onSaved, adminEmail }) {
             })}
           </div>
         </Field>
+
+        {/* Snapshot semantics footer */}
+        <div style={{
+          fontSize: 11,
+          color: 'var(--text-muted)',
+          lineHeight: 1.5,
+          padding: '8px 10px',
+          borderTop: '1px dashed var(--gray-200)',
+        }}>
+          New attendance punches on the selected dates will be flagged as a holiday. Attendance records already saved for these dates will <strong>not</strong> be retroactively flagged — edit those days individually under each teacher's Attendance tab if needed.
+        </div>
       </div>
     </Modal>
   )
@@ -810,24 +788,11 @@ function ConfirmDelete({ holiday, onClose, onDone }) {
       return
     }
 
-    // The dates that were on holiday must now be re-evaluated — they may
-    // become "Late" or "Early leave" days if attendance was punched.
-    const { data: n, error: rcErr } = await supabaseAdmin
-      .rpc('recompute_attendance_daily_range', {
-        p_start_date: holiday.date,
-        p_end_date: holiday.end_date || holiday.date,
-        p_branch_code: holiday.branch_code, // null = both branches
-      })
-
-    if (rcErr) {
-      toast.show(`Deleted, but historical recompute failed: ${rcErr.message}`, 'error')
-    } else {
-      toast.show(
-        (n ?? 0) > 0
-          ? `Holiday removed · ${n} attendance ${n === 1 ? 'row' : 'rows'} recomputed`
-          : 'Holiday removed'
-      )
-    }
+    // Pattern 1 — snapshot at write time. New attendance punches on these
+    // dates will see no holiday and compute late/early normally. Past
+    // attendance rows that were already flagged as is_holiday stay flagged
+    // — admin must edit those individually to un-flag.
+    toast.show('Holiday removed')
     setWorking(false)
     onDone()
   }
@@ -861,7 +826,7 @@ function ConfirmDelete({ holiday, onClose, onDone }) {
         }
       </p>
       <p style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
-        Attendance for these dates will be re-evaluated — days with punches will go back to normal Present/Late/Early-leave calculations.
+        New attendance punches on {isRange ? 'these dates' : 'this date'} will no longer be flagged as a holiday. Existing attendance records that were already saved will keep their original holiday flag — edit those days individually if needed.
       </p>
     </Modal>
   )
