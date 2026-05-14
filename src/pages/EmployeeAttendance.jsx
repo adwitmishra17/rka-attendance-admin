@@ -120,7 +120,14 @@ export default function EmployeeAttendance({ employeeId }) {
       let status = 'absent'
       if (d.dow === 0) status = 'sunday'
       else if (hol) status = 'holiday'
-      else if (ad) status = ad.status || 'present'
+      else if (ad) {
+        status = ad.status || 'present'
+        // Sub-classification: a "present" row with computed late_minutes > 0
+        // is displayed as "Late". Other statuses keep their explicit value.
+        if (status === 'present' && (ad.late_minutes || 0) > 0) {
+          status = 'late'
+        }
+      }
       else if (d.iso > today) status = 'future'
       return {
         ...d,

@@ -172,6 +172,12 @@ export default function Attendance() {
         effectiveStatus = 'holiday'
       } else if (daily) {
         effectiveStatus = daily.status || 'present'
+        // Sub-classification: a "present" row with computed late_minutes > 0
+        // is displayed as "Late". Other statuses (half_day, on_leave, absent)
+        // keep their explicit value regardless of late_minutes.
+        if (effectiveStatus === 'present' && (daily.late_minutes || 0) > 0) {
+          effectiveStatus = 'late'
+        }
       } else if (!isToday) {
         effectiveStatus = 'absent'
       }
