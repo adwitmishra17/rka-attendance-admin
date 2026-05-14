@@ -112,10 +112,32 @@ export default function ReportingTime() {
 
     if (error) {
       toast.show('Save failed: ' + error.message, 'error')
-    } else {
-      toast.show(`Reporting time saved for ${branchLabel(editBranch)}`)
-      setOriginal(form)
+      setSaving(false)
+      return
     }
+
+    // Recompute attendance_daily for this branch — every row that
+    // doesn't have a per-employee override picks up the new defaults
+    // for expected_in/out, grace, late_minutes, early_leave_minutes.
+    const { data: recomputed, error: rcErr } = await supabaseAdmin
+      .rpc('recompute_attendance_daily_range', { p_branch_code: editBranch })
+
+    if (rcErr) {
+      // The save itself succeeded; surface the recompute failure but
+      // don't roll back. Admin can retry by editing + saving again.
+      toast.show(
+        `Saved, but historical recompute failed: ${rcErr.message}`,
+        'error'
+      )
+    } else {
+      const n = recomputed ?? 0
+      toast.show(
+        n > 0
+          ? `Saved for ${branchLabel(editBranch)} · ${n} attendance ${n === 1 ? 'row' : 'rows'} recomputed`
+          : `Reporting time saved for ${branchLabel(editBranch)}`
+      )
+    }
+    setOriginal(form)
     setSaving(false)
   }
 
@@ -340,7 +362,7 @@ export default function ReportingTime() {
             lineHeight: 1.6,
             marginBottom: 16,
           }}>
-            <strong style={{ color: 'var(--text)' }}>Coming later:</strong> day-of-week overrides (e.g. shorter Saturday), per-teacher custom timings (already on the Employees page), and one-off date overrides for special days.
+            <strong style={{ color: 'var(--text)' }}>Tip:</strong> per-teacher custom timings (for part-time / KG staff) are on each teacher's profile under "Custom timing". They override the branch default for that person only. Day-of-week overrides (shorter Saturday, etc.) and one-off date overrides will come later.
           </div>
 
           {/* Save bar */}

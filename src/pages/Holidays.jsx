@@ -34,17 +34,23 @@ export default function Holidays() {
 
   const today = new Date().toISOString().slice(0, 10)
 
+  // For ranges, the effective "end" is end_date; for single-day, it's date.
+  // A holiday is "past" only after its end is behind today.
   const filtered = useMemo(() => {
-    if (filter === 'upcoming') return holidays.filter(h => h.date >= today)
-    if (filter === 'past') return holidays.filter(h => h.date < today)
+    const endOf = h => h.end_date || h.date
+    if (filter === 'upcoming') return holidays.filter(h => endOf(h) >= today)
+    if (filter === 'past') return holidays.filter(h => endOf(h) < today)
     return holidays
   }, [holidays, filter, today])
 
-  const counts = useMemo(() => ({
-    upcoming: holidays.filter(h => h.date >= today).length,
-    past: holidays.filter(h => h.date < today).length,
-    all: holidays.length,
-  }), [holidays, today])
+  const counts = useMemo(() => {
+    const endOf = h => h.end_date || h.date
+    return {
+      upcoming: holidays.filter(h => endOf(h) >= today).length,
+      past: holidays.filter(h => endOf(h) < today).length,
+      all: holidays.length,
+    }
+  }, [holidays, today])
 
   // Group by month for nicer display
   const grouped = useMemo(() => {
@@ -205,11 +211,42 @@ function MonthGroup({ monthKey, items, today, onEdit, onDelete }) {
 }
 
 function HolidayRow({ holiday, today, isLast, onEdit, onDelete }) {
-  const date = new Date(holiday.date)
-  const day = date.getDate()
-  const dayOfWeek = date.toLocaleDateString('en-IN', { weekday: 'short' })
-  const isPast = holiday.date < today
-  const isToday = holiday.date === today
+  const startD = new Date(holiday.date + 'T00:00:00')
+  const endD = holiday.end_date ? new Date(holiday.end_date + 'T00:00:00') : null
+  const isRange = !!holiday.end_date
+  const day = startD.getDate()
+  const dayOfWeek = startD.toLocaleDateString('en-IN', { weekday: 'short' })
+
+  // For ranges, "active now" if today falls between start and end (inclusive);
+  // otherwise the existing today/past logic.
+  const isToday = isRange
+    ? (today >= holiday.date && today <= holiday.end_date)
+    : (holiday.date === today)
+  const isPast = isRange ? holiday.end_date < today : holiday.date < today
+
+  // Range label, e.g. "1 — 15 Jul 2026" or "28 Jun — 15 Jul 2026" depending on
+  // whether start and end share month/year. Compact and reads naturally.
+  const rangeLabel = useMemo(() => {
+    if (!isRange) return null
+    const sameYear = startD.getFullYear() === endD.getFullYear()
+    const sameMonth = sameYear && startD.getMonth() === endD.getMonth()
+    if (sameMonth) {
+      const m = startD.toLocaleDateString('en-IN', { month: 'short' })
+      return `${startD.getDate()} – ${endD.getDate()} ${m} ${startD.getFullYear()}`
+    }
+    if (sameYear) {
+      const s = startD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+      const e = endD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+      return `${s} – ${e} ${startD.getFullYear()}`
+    }
+    const s = startD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    const e = endD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    return `${s} – ${e}`
+  }, [isRange, holiday.date, holiday.end_date])
+
+  const dayCount = isRange
+    ? Math.round((endD - startD) / 86400000) + 1
+    : null
 
   return (
     <div style={{
@@ -220,7 +257,7 @@ function HolidayRow({ holiday, today, isLast, onEdit, onDelete }) {
       borderBottom: isLast ? 'none' : '1px solid var(--gray-100)',
       opacity: isPast ? 0.55 : 1,
     }}>
-      {/* Date badge */}
+      {/* Date badge — for ranges, show start date with a small dash overlay hint */}
       <div style={{
         width: 48,
         height: 52,
@@ -233,6 +270,7 @@ function HolidayRow({ holiday, today, isLast, onEdit, onDelete }) {
         alignItems: 'center',
         justifyContent: 'center',
         color: isToday ? 'white' : 'var(--gold-dark)',
+        position: 'relative',
       }}>
         <div style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.85 }}>
           {dayOfWeek}
@@ -246,6 +284,23 @@ function HolidayRow({ holiday, today, isLast, onEdit, onDelete }) {
         }}>
           {day}
         </div>
+        {isRange && (
+          <div style={{
+            position: 'absolute',
+            bottom: -6,
+            right: -6,
+            background: isToday ? 'var(--gold)' : 'var(--green-dark)',
+            color: 'white',
+            fontSize: 9,
+            fontWeight: 700,
+            borderRadius: 999,
+            padding: '1px 6px',
+            border: '1.5px solid var(--white)',
+            lineHeight: 1.3,
+          }}>
+            +{dayCount - 1}d
+          </div>
+        )}
       </div>
 
       {/* Name & meta */}
@@ -253,6 +308,18 @@ function HolidayRow({ holiday, today, isLast, onEdit, onDelete }) {
         <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span>{holiday.name}</span>
           <BranchScopeChip branchCode={holiday.branch_code} />
+          {isRange && (
+            <span style={{
+              fontSize: 10,
+              padding: '1px 7px',
+              background: 'var(--green-light)',
+              color: 'var(--green-dark)',
+              borderRadius: 999,
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+            }}>{dayCount} days</span>
+          )}
           {isToday && (
             <span style={{
               fontSize: 10,
@@ -263,9 +330,14 @@ function HolidayRow({ holiday, today, isLast, onEdit, onDelete }) {
               fontWeight: 600,
               textTransform: 'uppercase',
               letterSpacing: '0.04em',
-            }}>Today</span>
+            }}>{isRange ? 'Ongoing' : 'Today'}</span>
           )}
         </div>
+        {isRange && (
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: holiday.notes ? 2 : 0 }}>
+            {rangeLabel}
+          </div>
+        )}
         {holiday.notes && (
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.4 }}>{holiday.notes}</div>
         )}
@@ -369,11 +441,38 @@ const iconBtn = {
 function HolidayForm({ holiday, onClose, onSaved, adminEmail }) {
   const isEdit = !!holiday
   const toast = useToast()
+  const { allowedBranches, isSuperAdmin } = useAuth()
   const [saving, setSaving] = useState(false)
+
+  // Branch scope helper:
+  //   Super admin can pick: null (both) | 'MAIN' | 'CITY'
+  //   Branch admin can pick: null (both) | their single branch
+  // For existing rows from before per-branch was selectable, branch_code may
+  // already be NULL or a single code; we preserve it.
+  const branchOptions = useMemo(() => {
+    const opts = [{ value: null, label: 'Both branches', sub: 'Applies to MAIN and CITY' }]
+    for (const code of (isSuperAdmin ? ['MAIN', 'CITY'] : allowedBranches)) {
+      opts.push({
+        value: code,
+        label: code === 'MAIN' ? 'Main Campus' : 'City Branch',
+        sub: code === 'MAIN' ? 'Sawarubandh / Akhar' : 'Japlinganj',
+      })
+    }
+    return opts
+  }, [isSuperAdmin, allowedBranches])
+
   const [form, setForm] = useState({
     date: holiday?.date || '',
+    end_date: holiday?.end_date || '',
+    isRange: !!holiday?.end_date,
     name: holiday?.name || '',
     notes: holiday?.notes || '',
+    // === branch_code === Allowed values: null | 'MAIN' | 'CITY'.
+    // For new holidays: pre-select user's single branch if branch-locked,
+    // else null = both branches.
+    branch_code: isEdit
+      ? (holiday.branch_code ?? null)
+      : (allowedBranches.length === 1 ? allowedBranches[0] : null),
   })
   const [errors, setErrors] = useState({})
 
@@ -384,8 +483,17 @@ function HolidayForm({ holiday, onClose, onSaved, adminEmail }) {
 
   function validate() {
     const errs = {}
-    if (!form.date) errs.date = 'Date is required'
+    if (!form.date) errs.date = 'Start date is required'
     if (!form.name.trim()) errs.name = 'Name is required'
+    if (form.isRange) {
+      if (!form.end_date) {
+        errs.end_date = 'End date is required for a range'
+      } else if (form.end_date < form.date) {
+        errs.end_date = 'End date must be on or after the start date'
+      } else if (form.end_date === form.date) {
+        errs.end_date = 'For a single day, switch off the range toggle'
+      }
+    }
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -398,24 +506,32 @@ function HolidayForm({ holiday, onClose, onSaved, adminEmail }) {
     }
     setSaving(true)
 
-    // NOTE: branch_code is not yet selectable from this form — it's stamped in
-    // sub-phase 2d. Until then, new holidays default to NULL = applies to both
-    // branches (preserving existing behaviour). On edit, the existing branch_code
-    // is preserved (we don't include it in the payload, so update() leaves it).
+    // Build payload. branch_code is now selectable (Pass 4). For single-day
+    // holidays end_date is null; for ranges it's set and >= date.
     const payload = {
       date: form.date,
+      end_date: form.isRange ? form.end_date : null,
       name: form.name.trim(),
       notes: form.notes.trim() || null,
+      branch_code: form.branch_code, // null = both branches
     }
 
-    let res
+    let res, savedRow
     if (isEdit) {
-      res = await supabaseAdmin.from('holidays').update(payload).eq('id', holiday.id)
+      res = await supabaseAdmin
+        .from('holidays')
+        .update(payload)
+        .eq('id', holiday.id)
+        .select()
+        .single()
+      savedRow = res.data
     } else {
-      res = await supabaseAdmin.from('holidays').insert({
-        ...payload,
-        created_by: adminEmail,
-      })
+      res = await supabaseAdmin
+        .from('holidays')
+        .insert({ ...payload, created_by: adminEmail })
+        .select()
+        .single()
+      savedRow = res.data
     }
 
     if (res.error) {
@@ -428,10 +544,55 @@ function HolidayForm({ holiday, onClose, onSaved, adminEmail }) {
       return
     }
 
-    toast.show(isEdit ? 'Holiday updated' : 'Holiday added')
+    // Recompute attendance_daily across the affected range × branch scope.
+    // When editing, we also need to cover the OLD range in case the date
+    // window shrank or moved (rows that are no longer holidays must be
+    // un-flagged). So we union the old and new ranges.
+    const ranges = [
+      { start: savedRow.date, end: savedRow.end_date || savedRow.date, branch: savedRow.branch_code },
+    ]
+    if (isEdit && holiday) {
+      ranges.push({
+        start: holiday.date,
+        end: holiday.end_date || holiday.date,
+        branch: holiday.branch_code,
+      })
+    }
+    let recomputedTotal = 0
+    let recomputeFailed = false
+    for (const r of ranges) {
+      const { data: n, error: rcErr } = await supabaseAdmin
+        .rpc('recompute_attendance_daily_range', {
+          p_start_date: r.start,
+          p_end_date: r.end,
+          p_branch_code: r.branch, // null = all branches
+        })
+      if (rcErr) {
+        console.error('Recompute failed:', rcErr)
+        recomputeFailed = true
+      } else {
+        recomputedTotal += (n ?? 0)
+      }
+    }
+
+    if (recomputeFailed) {
+      toast.show('Saved, but historical recompute had errors. Check console.', 'error')
+    } else if (recomputedTotal > 0) {
+      toast.show(`${isEdit ? 'Updated' : 'Added'} · ${recomputedTotal} attendance ${recomputedTotal === 1 ? 'row' : 'rows'} recomputed`)
+    } else {
+      toast.show(isEdit ? 'Holiday updated' : 'Holiday added')
+    }
     setSaving(false)
     onSaved()
   }
+
+  // Quick display of the duration when range mode is on
+  const rangeDays = useMemo(() => {
+    if (!form.isRange || !form.date || !form.end_date || form.end_date < form.date) return null
+    const a = new Date(form.date + 'T00:00:00')
+    const b = new Date(form.end_date + 'T00:00:00')
+    return Math.round((b - a) / 86400000) + 1
+  }, [form.isRange, form.date, form.end_date])
 
   return (
     <Modal
@@ -448,17 +609,67 @@ function HolidayForm({ holiday, onClose, onSaved, adminEmail }) {
       }
     >
       <div style={{ display: 'grid', gap: 14 }}>
-        <Field label="Date" required error={errors.date}>
-          <input type="date" value={form.date}
-            onChange={e => update('date', e.target.value)}
-            style={inputStyle} />
-        </Field>
 
-        <Field label="Holiday name" required error={errors.name}>
+        {/* Single day vs date range toggle */}
+        <div style={{
+          display: 'flex',
+          background: 'var(--gray-50)',
+          border: '1px solid var(--gray-200)',
+          borderRadius: 'var(--radius-md)',
+          padding: 3,
+          gap: 0,
+        }}>
+          <ToggleOption
+            active={!form.isRange}
+            onClick={() => { update('isRange', false); update('end_date', '') }}
+            label="Single day"
+            sub="One date (Holi, Diwali, etc.)"
+          />
+          <ToggleOption
+            active={form.isRange}
+            onClick={() => update('isRange', true)}
+            label="Date range"
+            sub="Multi-day vacation"
+          />
+        </div>
+
+        {/* Dates */}
+        <div style={{ display: 'grid', gridTemplateColumns: form.isRange ? '1fr 1fr' : '1fr', gap: 12 }}>
+          <Field label={form.isRange ? 'Start date' : 'Date'} required error={errors.date}>
+            <input type="date" value={form.date}
+              onChange={e => update('date', e.target.value)}
+              style={inputStyle} />
+          </Field>
+          {form.isRange && (
+            <Field label="End date" required error={errors.end_date} hint="Inclusive">
+              <input type="date" value={form.end_date}
+                onChange={e => update('end_date', e.target.value)}
+                min={form.date || undefined}
+                style={inputStyle} />
+            </Field>
+          )}
+        </div>
+
+        {form.isRange && rangeDays && (
+          <div style={{
+            padding: '8px 12px',
+            background: 'var(--green-light)',
+            border: '1px solid rgba(26,74,46,0.15)',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 12,
+            color: 'var(--green-dark)',
+          }}>
+            <strong>{rangeDays}</strong> {rangeDays === 1 ? 'day' : 'days'} total (inclusive)
+          </div>
+        )}
+
+        <Field label={form.isRange ? 'Vacation name' : 'Holiday name'} required error={errors.name}>
           <input type="text" value={form.name}
             onChange={e => update('name', e.target.value)}
             style={inputStyle}
-            placeholder="e.g. Holi, Diwali, Independence Day" />
+            placeholder={form.isRange
+              ? 'e.g. Summer Vacation, Winter Break'
+              : 'e.g. Holi, Diwali, Independence Day'} />
         </Field>
 
         <Field label="Notes" hint="Optional">
@@ -468,24 +679,62 @@ function HolidayForm({ holiday, onClose, onSaved, adminEmail }) {
             placeholder="Any additional context — half-day, sub-event, etc." />
         </Field>
 
-        {/* Branch scope info banner — selector comes in sub-phase 2d */}
-        <div style={{
-          padding: '10px 12px',
-          background: 'var(--gold-light)',
-          border: '1px solid rgba(201,162,39,0.25)',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: 11.5,
-          color: 'var(--text-muted)',
-          lineHeight: 1.5,
-        }}>
-          {isEdit ? (
-            <>This holiday's branch scope: <strong style={{ color: 'var(--text)' }}><BranchScopeChip branchCode={holiday.branch_code} /></strong>. Per-branch editing comes in the next phase.</>
-          ) : (
-            <>New holidays currently default to <strong style={{ color: 'var(--text)' }}>both branches</strong>. Per-branch creation comes in the next phase.</>
-          )}
-        </div>
+        {/* Branch scope selector */}
+        <Field label="Applies to" hint={isSuperAdmin ? null : 'Limited to your branch'}>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {branchOptions.map(opt => {
+              const checked = form.branch_code === opt.value
+              return (
+                <label key={String(opt.value)} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '10px 12px',
+                  border: `1px solid ${checked ? 'var(--green)' : 'var(--gray-200)'}`,
+                  background: checked ? 'var(--green-light)' : 'var(--white)',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}>
+                  <input
+                    type="radio"
+                    name="branch_scope"
+                    checked={checked}
+                    onChange={() => update('branch_code', opt.value)}
+                    style={{ accentColor: 'var(--green-dark)' }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: checked ? 'var(--green-dark)' : 'var(--text)' }}>{opt.label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{opt.sub}</div>
+                  </div>
+                </label>
+              )
+            })}
+          </div>
+        </Field>
       </div>
     </Modal>
+  )
+}
+
+function ToggleOption({ active, onClick, label, sub }) {
+  return (
+    <button onClick={onClick} type="button" style={{
+      flex: 1,
+      padding: '10px 12px',
+      background: active ? 'var(--white)' : 'transparent',
+      border: 'none',
+      borderRadius: 6,
+      cursor: 'pointer',
+      boxShadow: active ? 'var(--shadow-sm)' : 'none',
+      color: active ? 'var(--text)' : 'var(--text-muted)',
+      fontFamily: 'inherit',
+      textAlign: 'left',
+      transition: 'all 0.15s',
+    }}>
+      <div style={{ fontSize: 12.5, fontWeight: active ? 600 : 500 }}>{label}</div>
+      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 1 }}>{sub}</div>
+    </button>
   )
 }
 
@@ -560,16 +809,38 @@ function ConfirmDelete({ holiday, onClose, onDone }) {
       setWorking(false)
       return
     }
-    toast.show('Holiday removed')
+
+    // The dates that were on holiday must now be re-evaluated — they may
+    // become "Late" or "Early leave" days if attendance was punched.
+    const { data: n, error: rcErr } = await supabaseAdmin
+      .rpc('recompute_attendance_daily_range', {
+        p_start_date: holiday.date,
+        p_end_date: holiday.end_date || holiday.date,
+        p_branch_code: holiday.branch_code, // null = both branches
+      })
+
+    if (rcErr) {
+      toast.show(`Deleted, but historical recompute failed: ${rcErr.message}`, 'error')
+    } else {
+      toast.show(
+        (n ?? 0) > 0
+          ? `Holiday removed · ${n} attendance ${n === 1 ? 'row' : 'rows'} recomputed`
+          : 'Holiday removed'
+      )
+    }
     setWorking(false)
     onDone()
   }
 
-  const date = new Date(holiday.date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const isRange = !!holiday.end_date
+  const startLabel = new Date(holiday.date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const endLabel = isRange
+    ? new Date(holiday.end_date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    : null
 
   return (
     <Modal open={true} onClose={() => !working && onClose()}
-      title="Delete holiday?"
+      title={isRange ? 'Delete vacation?' : 'Delete holiday?'}
       footer={
         <>
           <button onClick={onClose} disabled={working} style={btnSecondary}>Cancel</button>
@@ -583,7 +854,14 @@ function ConfirmDelete({ holiday, onClose, onDone }) {
       }
     >
       <p style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
-        Remove <strong>{holiday.name}</strong> on <strong>{date}</strong>?
+        Remove <strong>{holiday.name}</strong>
+        {isRange
+          ? <> from <strong>{startLabel}</strong> to <strong>{endLabel}</strong>?</>
+          : <> on <strong>{startLabel}</strong>?</>
+        }
+      </p>
+      <p style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+        Attendance for these dates will be re-evaluated — days with punches will go back to normal Present/Late/Early-leave calculations.
       </p>
     </Modal>
   )

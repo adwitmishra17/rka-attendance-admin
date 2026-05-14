@@ -50,11 +50,26 @@ export default function EmployeeProfile() {
   // Departments (Phase 4.5)
   const [departments, setDepartments] = useState([])
 
+  // Branch reporting-time defaults — shown as fallback hint next to per-employee
+  // custom timing fields, so admin can see what the override is overriding.
+  const [reportingTimeConfigs, setReportingTimeConfigs] = useState([])
+
   useEffect(() => { loadEmployee() }, [id])
 
   // Load departments once on mount (used in edit dropdown + name lookup)
   useEffect(() => {
     listDepartments().then(setDepartments).catch(() => setDepartments([]))
+  }, [])
+
+  // Load branch reporting-time configs once on mount
+  useEffect(() => {
+    if (!supabaseAdmin) return
+    ;(async () => {
+      const { data } = await supabaseAdmin
+        .from('reporting_time_config')
+        .select('branch_code, default_in_time, default_out_time, default_grace_minutes')
+      setReportingTimeConfigs(data || [])
+    })()
   }, [])
 
   // When entering edit mode, seed the form from the latest employee snapshot
@@ -239,11 +254,37 @@ export default function EmployeeProfile() {
         console.warn('Audit log skipped:', auditResult.error)
       }
 
+      // Recompute attendance_daily rows for this employee if their
+      // schedule actually changed. Compare against pre-save snapshot.
+      const timingChanged = (
+        (employee?.custom_in_time      ?? null) !== (updated.custom_in_time      ?? null)
+       || (employee?.custom_out_time    ?? null) !== (updated.custom_out_time    ?? null)
+       || (employee?.custom_grace_minutes ?? null) !== (updated.custom_grace_minutes ?? null)
+      )
+      if (timingChanged) {
+        const { data: n, error: rcErr } = await supabaseAdmin
+          .rpc('recompute_attendance_daily_range', { p_employee_id: id })
+        if (rcErr) {
+          // Save succeeded; flag the recompute failure but don't roll back.
+          toast.show(
+            `Changes saved. Historical recompute failed: ${rcErr.message}`,
+            'error'
+          )
+        } else {
+          toast.show(
+            (n ?? 0) > 0
+              ? `Changes saved · ${n} attendance ${n === 1 ? 'row' : 'rows'} recomputed`
+              : 'Changes saved'
+          )
+        }
+      } else {
+        toast.show('Changes saved')
+      }
+
       setEmployee(updated)
       setSearchParams({})
       setForm(null)
       setErrors({})
-      toast.show('Changes saved')
     } catch (e) {
       toast.show('Save failed: ' + e.message, 'error')
     }
@@ -329,6 +370,7 @@ export default function EmployeeProfile() {
           revealed={revealed}
           allEmployees={allEmployees}
           departments={departments}
+          reportingTimeConfigs={reportingTimeConfigs}
           canSeeSensitive={isSuperAdmin}
           onUpdate={update}
           onReveal={reveal}
@@ -547,7 +589,7 @@ function EditingPill() {
 // ============================================================================
 // EDIT MODE — full form, all fields
 // ============================================================================
-function EditMode({ form, errors, revealed, allEmployees, departments, canSeeSensitive, onUpdate, onReveal }) {
+function EditMode({ form, errors, revealed, allEmployees, departments, reportingTimeConfigs, canSeeSensitive, onUpdate, onReveal }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 24 }}>
 
@@ -758,14 +800,44 @@ function EditMode({ form, errors, revealed, allEmployees, departments, canSeeSen
       </Section>
 
       <Section title="Custom timing">
-        <FormField label="In time">
-          <Input type="time" value={form.custom_in_time?.slice(0, 5) || ''} onChange={v => onUpdate('custom_in_time', v || null)} />
+        <CustomTimingHint
+          form={form}
+          reportingTimeConfigs={reportingTimeConfigs}
+        />
+        <FormField
+          label="In time"
+          hint={timingHint(form, reportingTimeConfigs, 'in')}
+        >
+          <Input
+            type="time"
+            value={form.custom_in_time?.slice(0, 5) || ''}
+            onChange={v => onUpdate('custom_in_time', v || null)}
+            placeholder="Uses branch default"
+          />
         </FormField>
-        <FormField label="Out time">
-          <Input type="time" value={form.custom_out_time?.slice(0, 5) || ''} onChange={v => onUpdate('custom_out_time', v || null)} />
+        <FormField
+          label="Out time"
+          hint={timingHint(form, reportingTimeConfigs, 'out')}
+        >
+          <Input
+            type="time"
+            value={form.custom_out_time?.slice(0, 5) || ''}
+            onChange={v => onUpdate('custom_out_time', v || null)}
+            placeholder="Uses branch default"
+          />
         </FormField>
-        <FormField label="Grace minutes">
-          <Input type="number" min="0" max="60" value={form.custom_grace_minutes ?? ''} onChange={v => onUpdate('custom_grace_minutes', v === '' ? null : parseInt(v, 10))} />
+        <FormField
+          label="Grace minutes"
+          hint={timingHint(form, reportingTimeConfigs, 'grace')}
+        >
+          <Input
+            type="number"
+            min="0"
+            max="60"
+            value={form.custom_grace_minutes ?? ''}
+            onChange={v => onUpdate('custom_grace_minutes', v === '' ? null : parseInt(v, 10))}
+            placeholder="Uses branch default"
+          />
         </FormField>
       </Section>
 
@@ -1226,6 +1298,69 @@ function Field({ label, value, multiline }) {
       }}>
         {display}
       </div>
+    </div>
+  )
+}
+
+// ----------------------------------------------------------------------------
+// Custom-timing helpers (Pass 4)
+// Show admins what the branch default is, so the override field is meaningful
+// rather than just a blank box.
+// ----------------------------------------------------------------------------
+
+function fmtHHMM(t) {
+  if (!t) return null
+  return typeof t === 'string' ? t.slice(0, 5) : null
+}
+
+// One-line hint placed in the FormField header, e.g. "Default: 08:00"
+function timingHint(form, configs, kind) {
+  const branchCodes = Array.isArray(form?.branch_codes) ? form.branch_codes : []
+  if (branchCodes.length === 0 || !configs || configs.length === 0) return null
+  const cfgs = configs.filter(c => branchCodes.includes(c.branch_code))
+  if (cfgs.length === 0) return null
+
+  const key = kind === 'in' ? 'default_in_time' : kind === 'out' ? 'default_out_time' : 'default_grace_minutes'
+  const fmt = kind === 'grace' ? (v => `${v} min`) : fmtHHMM
+
+  // If one branch, single value. If both, "MAIN: 08:00 · CITY: 09:00" if different,
+  // or just one value if both branches share it.
+  if (cfgs.length === 1) {
+    const v = fmt(cfgs[0][key])
+    return v ? `Default: ${v}` : null
+  }
+  const vals = cfgs.map(c => fmt(c[key]))
+  if (vals[0] === vals[1]) return `Default: ${vals[0]}`
+  return cfgs.map(c => `${c.branch_code}: ${fmt(c[key])}`).join(' · ')
+}
+
+// Banner shown above the three timing fields — clearly explains what override
+// means and what happens when fields are left blank.
+function CustomTimingHint({ form, reportingTimeConfigs }) {
+  const branchCodes = Array.isArray(form?.branch_codes) ? form.branch_codes : []
+  const hasAnyOverride = !!(form?.custom_in_time || form?.custom_out_time || form?.custom_grace_minutes != null)
+
+  return (
+    <div style={{
+      padding: '10px 12px',
+      background: hasAnyOverride ? 'var(--gold-light)' : 'var(--gray-50)',
+      border: `1px solid ${hasAnyOverride ? 'rgba(201,162,39,0.25)' : 'var(--gray-200)'}`,
+      borderRadius: 'var(--radius-sm)',
+      fontSize: 11.5,
+      color: 'var(--text-muted)',
+      lineHeight: 1.55,
+      marginBottom: 6,
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 600, color: hasAnyOverride ? 'var(--gold-dark)' : 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+        {hasAnyOverride ? 'Custom schedule active' : 'Using branch default'}
+      </div>
+      Leave fields blank to follow the branch default set under <strong style={{ color: 'var(--text)' }}>Reporting Time</strong>.
+      Fill any field to override it for this teacher only — useful for part-time or KG staff with a different schedule.
+      {branchCodes.length === 0 && (
+        <div style={{ marginTop: 4, color: 'var(--crimson)' }}>
+          Branch not set on this employee — defaults can't be resolved yet.
+        </div>
+      )}
     </div>
   )
 }

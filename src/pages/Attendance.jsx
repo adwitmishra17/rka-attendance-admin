@@ -4,6 +4,7 @@ import { useAuth } from '../App'
 import { useToast } from '../components/Toast'
 import { applyBranchFilter, applyBranchFilterArray, applyBranchFilterNullable } from '../lib/branchQuery'
 import { branchLabel } from '../lib/branch'
+import Modal from '../components/Modal'
 
 const STATUS_STYLES = {
   present: { bg: 'var(--green-light)', color: 'var(--green-dark)', label: 'Present' },
@@ -55,7 +56,7 @@ function relativeTime(isoStr) {
 }
 
 export default function Attendance() {
-  const { effectiveBranches, currentBranch } = useAuth()
+  const { effectiveBranches, currentBranch, user } = useAuth()
   const toast = useToast()
   const [selectedDate, setSelectedDate] = useState(formatDate(new Date()))
   const [employees, setEmployees] = useState([])
@@ -65,6 +66,9 @@ export default function Attendance() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+
+  // Manual punch modal — either { employee, daily } (edit) or { employee: null } (new)
+  const [manualPunch, setManualPunch] = useState(null)
 
   const isToday = selectedDate === formatDate(new Date())
 
@@ -307,6 +311,32 @@ export default function Attendance() {
             Live
           </span>
         )}
+
+        {/* Mark attendance — opens manual punch modal for the selected date */}
+        <button
+          onClick={() => setManualPunch({ employee: null, daily: null })}
+          style={{
+            marginLeft: 'auto',
+            padding: '7px 14px',
+            background: 'var(--white)',
+            color: 'var(--green-dark)',
+            border: '1px solid var(--green-muted)',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 12,
+            fontWeight: 500,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+          title="Manually mark attendance for a teacher on this date"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Mark attendance
+        </button>
       </div>
 
       {/* Holiday banner — one line per holiday that applies to current branch view */}
@@ -407,7 +437,12 @@ export default function Attendance() {
               overflow: 'hidden',
             }}>
               {filtered.map((row, idx) => (
-                <RosterRow key={row.employee.id} row={row} isLast={idx === filtered.length - 1} />
+                <RosterRow
+                  key={row.employee.id}
+                  row={row}
+                  isLast={idx === filtered.length - 1}
+                  onClick={() => setManualPunch({ employee: row.employee, daily: row.daily || null })}
+                />
               ))}
             </div>
           )}
@@ -445,6 +480,20 @@ export default function Attendance() {
           </div>
         </div>
       </div>
+
+      {/* Manual punch modal */}
+      {manualPunch && (
+        <ManualPunchModal
+          date={selectedDate}
+          employees={employees}
+          preEmployee={manualPunch.employee}
+          existingDaily={manualPunch.daily}
+          adminEmail={user?.email}
+          currentBranch={currentBranch}
+          onClose={() => setManualPunch(null)}
+          onSaved={() => { setManualPunch(null); loadData() }}
+        />
+      )}
     </div>
   )
 }
@@ -494,19 +543,27 @@ function StatCard({ label, value, accent }) {
   )
 }
 
-function RosterRow({ row, isLast }) {
+function RosterRow({ row, isLast, onClick }) {
   const { employee: e, daily, status } = row
   const style = STATUS_STYLES[status] || STATUS_STYLES.not_marked
   const initials = (e.full_name || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 14,
-      padding: '12px 16px',
-      borderBottom: isLast ? 'none' : '1px solid var(--gray-100)',
-    }}>
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: '12px 16px',
+        borderBottom: isLast ? 'none' : '1px solid var(--gray-100)',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'background 0.12s',
+      }}
+      onMouseEnter={onClick ? ev => { ev.currentTarget.style.background = 'var(--gray-50)' } : undefined}
+      onMouseLeave={onClick ? ev => { ev.currentTarget.style.background = 'transparent' } : undefined}
+      title={onClick ? 'Click to mark / edit attendance' : undefined}
+    >
       <div style={{
         width: 34, height: 34,
         borderRadius: '50%',
@@ -636,4 +693,428 @@ function EmptyState({ message }) {
       <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{message}</p>
     </div>
   )
+}
+
+// ============================================================
+// MANUAL PUNCH MODAL
+//
+// Lets admin mark / edit attendance on a teacher's behalf — for cases
+// where the biometric failed, the teacher was on approved leave, etc.
+//
+// Writes directly to attendance_daily (NOT attendance_events) and tags
+// the row with source = 'manual-admin' so it's auditable. Then calls
+// recompute_attendance_daily(employee_id, date) so late_minutes /
+// early_leave_minutes / is_holiday all update against the schedule.
+// ============================================================
+
+const STATUS_OPTIONS = [
+  { value: 'present',  label: 'Present',  hint: 'Came in normally', needsTimes: true  },
+  { value: 'late',     label: 'Late',     hint: 'Marked late by admin', needsTimes: true  },
+  { value: 'half_day', label: 'Half day', hint: 'Half-day attendance', needsTimes: true  },
+  { value: 'on_leave', label: 'On leave', hint: 'Approved leave', needsTimes: false },
+  { value: 'absent',   label: 'Absent',   hint: 'Did not come in', needsTimes: false },
+]
+
+function ManualPunchModal({ date, employees, preEmployee, existingDaily, adminEmail, currentBranch, onClose, onSaved }) {
+  const toast = useToast()
+  const isEdit = !!existingDaily
+
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [employeeId, setEmployeeId] = useState(preEmployee?.id || '')
+  const [status, setStatus] = useState(existingDaily?.status || 'present')
+  const [inTime, setInTime] = useState(existingDaily?.in_time?.slice(0, 5) || '')
+  const [outTime, setOutTime] = useState(existingDaily?.out_time?.slice(0, 5) || '')
+  const [notes, setNotes] = useState(existingDaily?.notes || '')
+  const [search, setSearch] = useState('')
+  const [errors, setErrors] = useState({})
+
+  // Employee picker is locked when editing an existing row. When adding,
+  // it shows a searchable list of employees in the current branch view.
+  const selectedEmployee = useMemo(
+    () => employees.find(e => e.id === employeeId) || preEmployee || null,
+    [employees, employeeId, preEmployee]
+  )
+
+  const filteredEmployees = useMemo(() => {
+    if (!search.trim()) return employees
+    const s = search.trim().toLowerCase()
+    return employees.filter(e =>
+      (e.full_name || '').toLowerCase().includes(s)
+      || (e.employee_code || '').toLowerCase().includes(s)
+    )
+  }, [employees, search])
+
+  const statusMeta = STATUS_OPTIONS.find(s => s.value === status)
+
+  // Date label
+  const dateLabel = useMemo(() => {
+    const d = new Date(date + 'T00:00:00')
+    return d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  }, [date])
+
+  // Resolve the branch_code to stamp on the row.
+  //   Editing: keep the existing row's branch_code (immutable per record).
+  //   New: pick a branch — currentBranch if set; else employee's primary branch.
+  function resolveBranchCode(emp) {
+    if (existingDaily?.branch_code) return existingDaily.branch_code
+    if (currentBranch) return currentBranch
+    const codes = Array.isArray(emp?.branch_codes) ? emp.branch_codes : []
+    return codes[0] || null
+  }
+
+  function validate() {
+    const errs = {}
+    if (!employeeId && !preEmployee) errs.employee = 'Pick a teacher'
+    if (statusMeta?.needsTimes && !inTime && !outTime) {
+      errs.times = 'Set at least an In or Out time (or switch status to On leave / Absent)'
+    }
+    if (inTime && outTime && inTime > outTime) {
+      errs.times = 'Out time must be after In time'
+    }
+    setErrors(errs)
+    return Object.keys(errs).length === 0
+  }
+
+  async function handleSave() {
+    if (!validate()) return
+    if (!supabaseAdmin) {
+      toast.show('Admin client not initialised', 'error')
+      return
+    }
+    const emp = selectedEmployee
+    if (!emp) {
+      setErrors({ employee: 'Pick a teacher' })
+      return
+    }
+    const branchCode = resolveBranchCode(emp)
+    if (!branchCode) {
+      toast.show('Cannot resolve branch for this entry. Set a branch first.', 'error')
+      return
+    }
+
+    setSaving(true)
+    const dayOfWeek = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' })
+    const payload = {
+      employee_id: emp.id,
+      date,
+      day_of_week: dayOfWeek,
+      branch_code: branchCode,
+      status,
+      in_time:  statusMeta?.needsTimes && inTime  ? inTime  + ':00' : null,
+      out_time: statusMeta?.needsTimes && outTime ? outTime + ':00' : null,
+      source: 'manual-admin',
+      notes: notes.trim() || null,
+      updated_by: adminEmail || 'admin',
+      updated_at: new Date().toISOString(),
+    }
+
+    // UPSERT on (employee_id, date) — matches the trigger's conflict target.
+    const { error: e1 } = await supabaseAdmin
+      .from('attendance_daily')
+      .upsert(payload, { onConflict: 'employee_id,date' })
+    if (e1) {
+      toast.show('Save failed: ' + e1.message, 'error')
+      setSaving(false)
+      return
+    }
+
+    // Recompute derived fields (late_minutes, early_leave_minutes, is_holiday)
+    const { error: rcErr } = await supabaseAdmin
+      .rpc('recompute_attendance_daily', { p_employee_id: emp.id, p_date: date })
+    if (rcErr) {
+      toast.show(`Saved, but recompute failed: ${rcErr.message}`, 'error')
+    } else {
+      toast.show(isEdit ? 'Attendance updated' : 'Attendance marked')
+    }
+
+    setSaving(false)
+    onSaved()
+  }
+
+  async function handleDelete() {
+    if (!existingDaily || !supabaseAdmin) return
+    if (!window.confirm('Remove this attendance entry? The day will go back to its default status (Absent on working days, Holiday otherwise).')) return
+    setDeleting(true)
+    const { error } = await supabaseAdmin
+      .from('attendance_daily')
+      .delete()
+      .eq('employee_id', existingDaily.employee_id || selectedEmployee?.id)
+      .eq('date', date)
+    if (error) {
+      toast.show('Delete failed: ' + error.message, 'error')
+      setDeleting(false)
+      return
+    }
+    toast.show('Attendance entry removed')
+    setDeleting(false)
+    onSaved()
+  }
+
+  const branchCodePreview = resolveBranchCode(selectedEmployee)
+
+  return (
+    <Modal
+      open={true}
+      onClose={() => !saving && !deleting && onClose()}
+      title={isEdit ? 'Edit attendance' : 'Mark attendance'}
+      maxWidth={560}
+      footer={
+        <>
+          {isEdit && (
+            <button
+              onClick={handleDelete}
+              disabled={saving || deleting}
+              style={{
+                marginRight: 'auto',
+                padding: '8px 14px',
+                background: 'transparent',
+                color: 'var(--crimson)',
+                border: '1px solid rgba(139,26,26,0.25)',
+                borderRadius: 'var(--radius-md)',
+                fontSize: 12.5,
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              {deleting ? 'Removing…' : 'Remove entry'}
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            disabled={saving || deleting}
+            style={{
+              padding: '8px 16px',
+              background: 'var(--white)',
+              color: 'var(--text)',
+              border: '1px solid var(--gray-200)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || deleting}
+            style={{
+              padding: '8px 18px',
+              background: 'var(--green-dark)',
+              color: 'white',
+              border: 'none',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Mark attendance')}
+          </button>
+        </>
+      }
+    >
+      <div style={{ display: 'grid', gap: 14 }}>
+
+        {/* Date context banner */}
+        <div style={{
+          padding: '10px 12px',
+          background: 'var(--green-light)',
+          border: '1px solid rgba(26,74,46,0.15)',
+          borderRadius: 'var(--radius-sm)',
+          fontSize: 12.5,
+          color: 'var(--green-dark)',
+        }}>
+          For <strong>{dateLabel}</strong>
+          {branchCodePreview && (
+            <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.85 }}>
+              · {branchLabel(branchCodePreview)}
+            </span>
+          )}
+        </div>
+
+        {/* Employee picker */}
+        {isEdit || preEmployee ? (
+          <div style={{
+            padding: '10px 12px',
+            background: 'var(--gray-50)',
+            border: '1px solid var(--gray-200)',
+            borderRadius: 'var(--radius-sm)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+          }}>
+            <div style={{
+              width: 32, height: 32,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, var(--green), var(--green-dark))',
+              color: 'white',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, fontWeight: 600, flexShrink: 0,
+            }}>
+              {(selectedEmployee?.full_name || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text)' }}>{selectedEmployee?.full_name}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{selectedEmployee?.employee_code}</div>
+            </div>
+          </div>
+        ) : (
+          <ModalField label="Teacher" required error={errors.employee}>
+            <input
+              type="text"
+              placeholder="Search by name or code…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={modalInputStyle}
+            />
+            <div style={{
+              marginTop: 6,
+              maxHeight: 180,
+              overflow: 'auto',
+              border: '1px solid var(--gray-200)',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--white)',
+            }}>
+              {filteredEmployees.length === 0 ? (
+                <div style={{ padding: 14, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+                  No matches
+                </div>
+              ) : filteredEmployees.slice(0, 50).map(e => {
+                const chosen = e.id === employeeId
+                return (
+                  <div
+                    key={e.id}
+                    onClick={() => setEmployeeId(e.id)}
+                    style={{
+                      padding: '8px 12px',
+                      cursor: 'pointer',
+                      background: chosen ? 'var(--green-light)' : 'transparent',
+                      borderBottom: '1px solid var(--gray-100)',
+                    }}
+                    onMouseEnter={ev => { if (!chosen) ev.currentTarget.style.background = 'var(--gray-50)' }}
+                    onMouseLeave={ev => { if (!chosen) ev.currentTarget.style.background = 'transparent' }}
+                  >
+                    <div style={{ fontSize: 12.5, color: 'var(--text)', fontWeight: chosen ? 600 : 400 }}>
+                      {e.full_name}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                      {e.employee_code}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </ModalField>
+        )}
+
+        {/* Status */}
+        <ModalField label="Status" required>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: 6 }}>
+            {STATUS_OPTIONS.map(opt => {
+              const checked = status === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setStatus(opt.value)}
+                  style={{
+                    padding: '8px 10px',
+                    textAlign: 'left',
+                    background: checked ? 'var(--green-light)' : 'var(--white)',
+                    border: `1px solid ${checked ? 'var(--green)' : 'var(--gray-200)'}`,
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    transition: 'all 0.12s',
+                  }}
+                >
+                  <div style={{ fontSize: 12.5, fontWeight: 500, color: checked ? 'var(--green-dark)' : 'var(--text)' }}>{opt.label}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{opt.hint}</div>
+                </button>
+              )
+            })}
+          </div>
+        </ModalField>
+
+        {/* Times (only when status needs them) */}
+        {statusMeta?.needsTimes && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <ModalField label="In time" hint="Leave blank if unknown">
+              <input
+                type="time"
+                value={inTime}
+                onChange={e => setInTime(e.target.value)}
+                style={modalInputStyle}
+              />
+            </ModalField>
+            <ModalField label="Out time" hint="Leave blank if unknown">
+              <input
+                type="time"
+                value={outTime}
+                onChange={e => setOutTime(e.target.value)}
+                style={modalInputStyle}
+              />
+            </ModalField>
+            {errors.times && (
+              <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--crimson)', marginTop: -6 }}>
+                {errors.times}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Notes */}
+        <ModalField label="Notes" hint="Optional — explain why manual entry">
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="e.g. Biometric failed, on approved leave, etc."
+            style={{ ...modalInputStyle, minHeight: 56, resize: 'vertical' }}
+          />
+        </ModalField>
+
+        {/* Audit hint */}
+        <div style={{
+          fontSize: 11,
+          color: 'var(--text-muted)',
+          lineHeight: 1.5,
+          padding: '8px 10px',
+          borderTop: '1px dashed var(--gray-200)',
+        }}>
+          This entry will be tagged as a manual admin entry by <strong>{adminEmail || 'you'}</strong>. Late / early-leave minutes are computed automatically from the schedule.
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function ModalField({ label, required, error, hint, children }) {
+  return (
+    <label style={{ display: 'block' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 5 }}>
+        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)' }}>
+          {label}
+          {required && <span style={{ color: 'var(--crimson)', marginLeft: 3 }}>*</span>}
+        </span>
+        {hint && !error && <span style={{ fontSize: 10, color: 'var(--gray-400)' }}>{hint}</span>}
+      </div>
+      {children}
+      {error && <div style={{ fontSize: 11, color: 'var(--crimson)', marginTop: 4 }}>{error}</div>}
+    </label>
+  )
+}
+
+const modalInputStyle = {
+  width: '100%',
+  padding: '8px 11px',
+  border: '1px solid var(--gray-200)',
+  borderRadius: 'var(--radius-sm)',
+  fontSize: 13,
+  background: 'var(--white)',
+  color: 'var(--text)',
+  outline: 'none',
+  fontFamily: 'inherit',
+  boxSizing: 'border-box',
 }
