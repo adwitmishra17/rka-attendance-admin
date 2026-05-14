@@ -803,7 +803,7 @@ function ManualPunchModal({ date, employees, preEmployee, existingDaily, adminEm
       status,
       in_time:  statusMeta?.needsTimes && inTime  ? inTime  + ':00' : null,
       out_time: statusMeta?.needsTimes && outTime ? outTime + ':00' : null,
-      source: 'manual-admin',
+      source: 'admin',
       notes: notes.trim() || null,
       updated_by: adminEmail || 'admin',
       updated_at: new Date().toISOString(),
