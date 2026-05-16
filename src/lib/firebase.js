@@ -15,4 +15,18 @@ const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const db = getFirestore(app)
 export const googleProvider = new GoogleAuthProvider()
-googleProvider.setCustomParameters({ hd: 'rkacademyballia.in' })
+
+// hd            — hints Google to prefer @rkacademyballia.in accounts.
+// prompt        — 'select_account' forces the Google account chooser on
+//                 EVERY sign-in. Without this, Google silently reuses
+//                 whatever Google session is already active in the browser.
+//                 On a shared machine, that means the next person to sign in
+//                 can silently ride the previous user's Google session,
+//                 which leaves Firebase Auth in a tangled state and throws
+//                 auth/provider-already-linked. Forcing the chooser makes a
+//                 normal browser behave like an incognito window: the user
+//                 always explicitly picks their own account.
+googleProvider.setCustomParameters({
+  hd: 'rkacademyballia.in',
+  prompt: 'select_account',
+})
