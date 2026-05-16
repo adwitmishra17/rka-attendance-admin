@@ -1,0 +1,15 @@
+{
+  "name": "rka-firestore-teachers-backfill",
+  "version": "1.0.0",
+  "description": "One-time backfill: HRMS employees -> Firestore teachers, stamping hrmsEmployeeId.",
+  "type": "module",
+  "scripts": {
+    "dry-run": "node backfill_firestore_teachers.js --dry-run",
+    "backfill": "node backfill_firestore_teachers.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "@supabase/supabase-js": "^2.45.4",
+    "dotenv": "^16.4.5"
+  }
+}

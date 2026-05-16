@@ -64,6 +64,16 @@ const NAV = [
       </svg>
   },
   {
+    to: '/vehicles', label: 'Vehicles', icon:
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M3 17h2l1.5-7.5A2 2 0 0 1 8.46 8H15.54a2 2 0 0 1 1.96 1.5L19 17h2" />
+        <path d="M5 17v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2" />
+        <path d="M15 17v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2" />
+        <circle cx="7" cy="17" r="0.5" />
+        <circle cx="17" cy="17" r="0.5" />
+      </svg>
+  },
+  {
     to: '/walkins', label: 'Walk-ins', forReceptionist: true, icon:
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
         <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />

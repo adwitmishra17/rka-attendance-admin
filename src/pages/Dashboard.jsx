@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { applyBranchFilterArray, applyBranchFilterNullable } from '../lib/branchQuery'
 import { branchLabel } from '../lib/branch'
 import ExpiryWidget from '../components/ExpiryWidget'
+import FleetExpiryWidget from '../components/FleetExpiryWidget'
 
 // "Today" computed in Asia/Kolkata so the date boundary matches the device's
 // local clock and the trigger that populates attendance_daily.
@@ -118,62 +119,63 @@ export default function Dashboard() {
   const lastSeenMins = minutesAgo(stats.deviceLastSeen)
   const kioskStatus =
     lastSeenMins == null ? 'Not deployed' :
-    lastSeenMins < 2     ? 'Online'        :
-    lastSeenMins < 30    ? 'Idle'          :
-                           'Offline'
+      lastSeenMins < 2 ? 'Online' :
+        lastSeenMins < 30 ? 'Idle' :
+          'Offline'
   const kioskHint =
     lastSeenMins == null ? 'No device events yet' :
-    lastSeenMins < 2     ? `${stats.deviceCount} device${stats.deviceCount === 1 ? '' : 's'} reachable` :
-                           `Last event ${relTime(lastSeenMins)}`
+      lastSeenMins < 2 ? `${stats.deviceCount} device${stats.deviceCount === 1 ? '' : 's'} reachable` :
+        `Last event ${relTime(lastSeenMins)}`
 
   // Derive attendance display
   const attendanceValue =
     stats.presentToday == null || stats.totalActive == null ? '—' :
-    `${stats.presentToday} / ${stats.totalActive}`
+      `${stats.presentToday} / ${stats.totalActive}`
   const attendanceHint =
     stats.presentToday == null ? 'Loading…' :
-    stats.totalActive === 0    ? 'No active employees' :
-                                  'Marked in today'
+      stats.totalActive === 0 ? 'No active employees' :
+        'Marked in today'
 
   return (
-    <div style={{ padding:'32px 36px', maxWidth:1200 }}>
-      <div className="fade-in" style={{ marginBottom:28 }}>
+    <div style={{ padding: '32px 36px', maxWidth: 1200 }}>
+      <div className="fade-in" style={{ marginBottom: 28 }}>
         <h1 style={{
-          fontFamily:'var(--font-display)',
-          fontSize:28, fontWeight:600,
-          color:'var(--green-dark)',
-          marginBottom:6,
+          fontFamily: 'var(--font-display)',
+          fontSize: 28, fontWeight: 600,
+          color: 'var(--green-dark)',
+          marginBottom: 6,
         }}>
           Welcome, {user?.displayName?.split(' ')[0] || 'Admin'}
         </h1>
-        <p style={{ fontSize:13, color:'var(--text-muted)' }}>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
           {isSuperAdmin ? 'Super Admin · Full system control' : 'Admin · HR & Attendance'}
           <span style={{ margin: '0 8px', color: 'var(--gray-300)' }}>·</span>
           Viewing: <strong style={{ color: currentBranch === null ? 'var(--gold-dark)' : 'var(--green-dark)' }}>{branchLabel(currentBranch)}</strong>
         </p>
-        <div style={{ width:40, height:2, background:'linear-gradient(90deg, var(--gold), transparent)', marginTop:10, borderRadius:1 }} />
+        <div style={{ width: 40, height: 2, background: 'linear-gradient(90deg, var(--gold), transparent)', marginTop: 10, borderRadius: 1 }} />
       </div>
 
       {/* Status panel */}
       <div style={{
-        background:'var(--white)',
-        border:'1px solid var(--gray-200)',
-        borderRadius:'var(--radius-lg)',
-        padding:'20px 24px',
-        marginBottom:20,
+        background: 'var(--white)',
+        border: '1px solid var(--gray-200)',
+        borderRadius: 'var(--radius-lg)',
+        padding: '20px 24px',
+        marginBottom: 20,
       }}>
-        <div style={{ fontSize:11, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:600, marginBottom:14 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 14 }}>
           System Status
         </div>
-        <div style={{ display:'flex', gap:16, flexWrap:'wrap' }}>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <StatusPill label="Firebase Auth" status="connected" />
           <StatusPill label="Supabase Database" status={supabaseStatus} />
         </div>
       </div>
       <ExpiryWidget />
+      <FleetExpiryWidget />
 
       {/* Quick stats */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
         <StatCard label="Employees" value={stats.employees} hint={`In ${branchLabel(currentBranch)}`} />
         <StatCard label="Holidays" value={stats.holidays} hint={`Applicable to ${branchLabel(currentBranch)}`} />
         <StatCard label="Today's attendance" value={attendanceValue} hint={attendanceHint} />
@@ -186,16 +188,16 @@ export default function Dashboard() {
       </div>
 
       <div style={{
-        marginTop:24,
-        padding:'20px 24px',
-        background:'var(--gold-light)',
-        border:'1px solid rgba(201,162,39,0.25)',
-        borderRadius:'var(--radius-md)',
+        marginTop: 24,
+        padding: '20px 24px',
+        background: 'var(--gold-light)',
+        border: '1px solid rgba(201,162,39,0.25)',
+        borderRadius: 'var(--radius-md)',
       }}>
-        <div style={{ fontSize:12, fontWeight:600, color:'var(--gold-dark)', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em' }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gold-dark)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           v2 — Biometric Attendance Live
         </div>
-        <p style={{ fontSize:13, color:'var(--text)', lineHeight:1.6 }}>
+        <p style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
           Hikvision device pushes fingerprint punches directly to the HRMS. Daily rollup runs automatically on each event. Next: leave management, salary, and remote enrollment from this dashboard.
         </p>
       </div>
@@ -207,25 +209,25 @@ function StatCard({ label, value, hint, accent }) {
   // accent recolours the value text when set: green/gold/crimson/muted.
   // Default keeps the existing green-dark for backwards compat with other cards.
   const accentColor =
-    accent === 'green'   ? 'var(--green)' :
-    accent === 'gold'    ? 'var(--gold-dark)' :
-    accent === 'crimson' ? 'var(--crimson)' :
-    accent === 'muted'   ? 'var(--text-muted)' :
-                            'var(--green-dark)'
+    accent === 'green' ? 'var(--green)' :
+      accent === 'gold' ? 'var(--gold-dark)' :
+        accent === 'crimson' ? 'var(--crimson)' :
+          accent === 'muted' ? 'var(--text-muted)' :
+            'var(--green-dark)'
   return (
     <div style={{
-      background:'var(--white)',
-      border:'1px solid var(--gray-200)',
-      borderRadius:'var(--radius-md)',
-      padding:'16px 18px',
+      background: 'var(--white)',
+      border: '1px solid var(--gray-200)',
+      borderRadius: 'var(--radius-md)',
+      padding: '16px 18px',
     }}>
-      <div style={{ fontSize:10.5, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>
+      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 6 }}>
         {label}
       </div>
-      <div style={{ fontSize:26, fontWeight:600, fontFamily:'var(--font-display)', color:accentColor, lineHeight:1 }}>
+      <div style={{ fontSize: 26, fontWeight: 600, fontFamily: 'var(--font-display)', color: accentColor, lineHeight: 1 }}>
         {value}
       </div>
-      {hint && <div style={{ fontSize:10.5, color:'var(--text-muted)', marginTop:4 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>{hint}</div>}
     </div>
   )
 }
@@ -237,17 +239,17 @@ function StatusPill({ label, status }) {
   const bg = isOk ? 'var(--green-light)' : isLoading ? 'var(--gold-light)' : 'var(--crimson-light)'
   return (
     <div style={{
-      display:'flex',
-      alignItems:'center',
-      gap:8,
-      padding:'6px 12px',
-      background:bg,
-      borderRadius:999,
-      fontSize:12,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      padding: '6px 12px',
+      background: bg,
+      borderRadius: 999,
+      fontSize: 12,
       color,
-      fontWeight:500,
+      fontWeight: 500,
     }}>
-      <span style={{ width:7, height:7, borderRadius:'50%', background:color }} />
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />
       {label}: {isOk ? '✓' : isLoading ? '…' : status}
     </div>
   )

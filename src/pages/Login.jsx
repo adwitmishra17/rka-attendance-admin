@@ -1,6 +1,49 @@
+// ============================================================================
+// LOGIN
+//
+// Google sign-in for the HRMS admin portal.
+//
+// This component does ONE thing: run the Google popup sign-in and show errors.
+// It does NOT decide who is allowed in — that is handled entirely by
+// onAuthStateChanged in App.jsx, which reads the `admins` Firestore collection
+// and routes the user (or signs them back out with a message).
+//
+// Past mistakes — do not re-introduce them:
+//   * Use signInWithPopup ONLY. Never linkWithPopup / linkWithCredential here.
+//     This is a sign-in screen, not an account-linking screen; a link call on
+//     an already-linked account is what produced auth/provider-already-linked.
+//   * Do NOT pre-check auth.currentUser or signOut() before signing in.
+//     signInWithPopup works regardless of any existing session — it simply
+//     signs in the chosen account. A pre-check only turns one tap into two.
+//   * No "self-heal" retry loops. If sign-in fails, show the error and let the
+//     user tap again with a fresh gesture.
+//   * The Google provider must not use prompt:'select_account' (see firebase.js).
+// ============================================================================
+
 import React, { useState } from 'react'
-import { signInWithPopup, signOut } from 'firebase/auth'
+import { signInWithPopup } from 'firebase/auth'
 import { auth, googleProvider } from '../lib/firebase'
+
+// Map a Firebase Auth error to a short, human-readable message.
+// Returns '' for cases that need no message (e.g. a superseded popup).
+function messageForError(e) {
+  switch (e && e.code) {
+    case 'auth/popup-closed-by-user':
+      return 'Sign-in was cancelled.'
+    case 'auth/cancelled-popup-request':
+      return '' // a newer popup replaced this one — nothing to show
+    case 'auth/popup-blocked':
+      return 'Your browser blocked the sign-in pop-up. Allow pop-ups for this site and try again.'
+    case 'auth/network-request-failed':
+      return 'Network problem. Check your connection and try again.'
+    case 'auth/unauthorized-domain':
+      return 'This site is not authorised for sign-in. Contact Adwit Mishra.'
+    case 'auth/internal-error':
+      return 'Sign-in hit an unexpected error. Please try again.'
+    default:
+      return `Sign-in failed: ${(e && e.message) || 'Unknown error'}`
+  }
+}
 
 export default function Login({ authError }) {
   const [signing, setSigning] = useState(false)
@@ -8,59 +51,19 @@ export default function Login({ authError }) {
 
   async function handleSignIn() {
     setError('')
-
-    // If a residual auth session is still present (stale currentUser), clear
-    // it BEFORE attempting a fresh sign-in. A leftover session — which can be
-    // caused by a browser extension interfering with the OAuth popup, or by a
-    // prior sign-out that didn't fully settle — makes the popup flow throw
-    // auth/provider-already-linked.
-    //
-    // We deliberately do NOT immediately re-open the popup here. A popup
-    // opened *after* an awaited call is frequently blocked by the browser
-    // (the user-gesture is considered consumed). Instead we clear the state
-    // and ask the user for one more tap, which is a fresh gesture.
-    if (auth.currentUser) {
-      setSigning(true)
-      try { await signOut(auth) } catch (_) { /* ignore */ }
-      setSigning(false)
-      setError('Session refreshed — please tap “Sign in with Google” once more.')
-      return
-    }
-
     setSigning(true)
     try {
       await signInWithPopup(auth, googleProvider)
+      // Success. onAuthStateChanged in App.jsx now verifies the admins doc
+      // and routes the user; on a valid admin this component unmounts.
+      // (We still clear `signing` in finally so the button is never stuck
+      //  spinning if App.jsx signs the user back out for an authz failure.)
     } catch (e) {
       console.error('Sign-in error:', e.code, e.message)
-
-      // Self-heal: provider-already-linked / credential-already-in-use mean
-      // the auth instance is in a dirty state. Clear it fully; the user taps
-      // again (fresh gesture → popup won't be blocked) and it succeeds.
-      if (
-        e.code === 'auth/provider-already-linked' ||
-        e.code === 'auth/credential-already-in-use'
-      ) {
-        try { await signOut(auth) } catch (_) { /* ignore */ }
-        setError(
-          'Session cleared — please tap “Sign in with Google” once more. ' +
-          'If this keeps happening, try a private/incognito window or disable browser extensions.'
-        )
-      } else if (e.code === 'auth/popup-closed-by-user') {
-        setError('Sign-in cancelled.')
-      } else if (e.code === 'auth/popup-blocked') {
-        setError('Pop-up blocked. Please allow pop-ups and try again.')
-      } else if (e.code === 'auth/network-request-failed') {
-        setError('Network issue. Check your connection and try again.')
-      } else if (e.code === 'auth/unauthorized-domain') {
-        setError('This domain is not authorised for sign-in. Contact Adwit Mishra.')
-      } else {
-        setError(
-          `Sign-in failed: ${e.message}. ` +
-          'If this persists, try a private/incognito window or disable browser extensions.'
-        )
-      }
+      setError(messageForError(e))
+    } finally {
+      setSigning(false)
     }
-    setSigning(false)
   }
 
   return (

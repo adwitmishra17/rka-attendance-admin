@@ -16,6 +16,8 @@ import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Employees from './pages/Employees'
 import EmployeeProfile from './pages/EmployeeProfile'
+import Vehicles from './pages/Vehicles'
+import VehicleProfile from './pages/VehicleProfile'
 import Attendance from './pages/Attendance'
 import MonthlyReport from './pages/MonthlyReport'
 import Holidays from './pages/Holidays'
@@ -171,6 +173,8 @@ export default function App() {
           <Route path="walkins" element={<WalkIns />} />
           <Route path="walkins/:id" element={<WalkInDetail />} />
           <Route path="recruitment-tags" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <RecruitmentTags />} />
+          <Route path="vehicles" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Vehicles />} />
+          <Route path="vehicles/:id" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <VehicleProfile />} />
           <Route path="admin-users" element={adminRole === 'super_admin' ? <AdminUsers /> : <Navigate to="/" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />

@@ -19,3 +19,17 @@ tracker_to_hrms_id.json
 migration_dry_run.txt
 migration_log.txt
 
+# dependencies / build
+node_modules
+dist
+
+# secrets — never commit these
+.env
+.env.*
+secrets/
+**/serviceAccountKey.json
+**/*-firebase-adminsdk-*.json
+**/service-account*.json
+
+# macOS
+.DS_Store

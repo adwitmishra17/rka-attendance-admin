@@ -1,3 +1,28 @@
+// ============================================================================
+// FIREBASE
+//
+// Firebase app, Auth, and Firestore for the HRMS admin portal.
+// Project: rka-academic-tracker (shared with the Academic Tracker — Auth and
+// the `admins` collection live here).
+//
+// Google provider config — IMPORTANT, do not change without reading this:
+//
+//   hd      — hints Google to prefer @rkacademyballia.in Workspace accounts
+//             in the chooser. Genuine Workspace accounts pass it fine; it was
+//             present the whole time sign-in worked, so it stays.
+//
+//   prompt  — we deliberately DO NOT set prompt:'select_account'. Forcing the
+//             account chooser on every sign-in inserts a mandatory interactive
+//             step inside the OAuth popup. That step fails for any admin who
+//             isn't already signed into their Workspace account in the browser
+//             — which is exactly what broke non-super-admin sign-in. Leaving
+//             prompt unset lets Google complete a valid session silently.
+//
+// Authorisation (who may enter, branch, modules) is enforced by
+// onAuthStateChanged in App.jsx against the `admins` Firestore collection —
+// NOT by anything in the Google popup.
+// ============================================================================
+
 import { initializeApp } from 'firebase/app'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
@@ -12,21 +37,9 @@ const firebaseConfig = {
 }
 
 const app = initializeApp(firebaseConfig)
+
 export const auth = getAuth(app)
 export const db = getFirestore(app)
-export const googleProvider = new GoogleAuthProvider()
 
-// hd            — hints Google to prefer @rkacademyballia.in accounts.
-// prompt        — 'select_account' forces the Google account chooser on
-//                 EVERY sign-in. Without this, Google silently reuses
-//                 whatever Google session is already active in the browser.
-//                 On a shared machine, that means the next person to sign in
-//                 can silently ride the previous user's Google session,
-//                 which leaves Firebase Auth in a tangled state and throws
-//                 auth/provider-already-linked. Forcing the chooser makes a
-//                 normal browser behave like an incognito window: the user
-//                 always explicitly picks their own account.
-googleProvider.setCustomParameters({
-  hd: 'rkacademyballia.in',
-  prompt: 'select_account',
-})
+export const googleProvider = new GoogleAuthProvider()
+googleProvider.setCustomParameters({ hd: 'rkacademyballia.in' })
