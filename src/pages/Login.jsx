@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { signInWithPopup } from 'firebase/auth'
+import { signInWithPopup, signOut } from 'firebase/auth'
 import { auth, googleProvider } from '../lib/firebase'
 
 export default function Login({ authError }) {
@@ -8,17 +8,56 @@ export default function Login({ authError }) {
 
   async function handleSignIn() {
     setError('')
+
+    // If a residual auth session is still present (stale currentUser), clear
+    // it BEFORE attempting a fresh sign-in. A leftover session — which can be
+    // caused by a browser extension interfering with the OAuth popup, or by a
+    // prior sign-out that didn't fully settle — makes the popup flow throw
+    // auth/provider-already-linked.
+    //
+    // We deliberately do NOT immediately re-open the popup here. A popup
+    // opened *after* an awaited call is frequently blocked by the browser
+    // (the user-gesture is considered consumed). Instead we clear the state
+    // and ask the user for one more tap, which is a fresh gesture.
+    if (auth.currentUser) {
+      setSigning(true)
+      try { await signOut(auth) } catch (_) { /* ignore */ }
+      setSigning(false)
+      setError('Session refreshed — please tap “Sign in with Google” once more.')
+      return
+    }
+
     setSigning(true)
     try {
       await signInWithPopup(auth, googleProvider)
     } catch (e) {
-      console.error(e)
-      if (e.code === 'auth/popup-closed-by-user') {
+      console.error('Sign-in error:', e.code, e.message)
+
+      // Self-heal: provider-already-linked / credential-already-in-use mean
+      // the auth instance is in a dirty state. Clear it fully; the user taps
+      // again (fresh gesture → popup won't be blocked) and it succeeds.
+      if (
+        e.code === 'auth/provider-already-linked' ||
+        e.code === 'auth/credential-already-in-use'
+      ) {
+        try { await signOut(auth) } catch (_) { /* ignore */ }
+        setError(
+          'Session cleared — please tap “Sign in with Google” once more. ' +
+          'If this keeps happening, try a private/incognito window or disable browser extensions.'
+        )
+      } else if (e.code === 'auth/popup-closed-by-user') {
         setError('Sign-in cancelled.')
       } else if (e.code === 'auth/popup-blocked') {
         setError('Pop-up blocked. Please allow pop-ups and try again.')
+      } else if (e.code === 'auth/network-request-failed') {
+        setError('Network issue. Check your connection and try again.')
+      } else if (e.code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorised for sign-in. Contact Adwit Mishra.')
       } else {
-        setError(`Sign-in failed: ${e.message}`)
+        setError(
+          `Sign-in failed: ${e.message}. ` +
+          'If this persists, try a private/incognito window or disable browser extensions.'
+        )
       }
     }
     setSigning(false)
