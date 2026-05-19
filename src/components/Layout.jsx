@@ -260,7 +260,7 @@ export default function Layout() {
       {!isMobile && (
         <aside style={{
           width: SIDEBAR_W,
-          background: 'var(--green-dark)',
+          background: 'var(--sidebar-bg)',
           flexShrink: 0,
           position: 'sticky',
           top: 0,
@@ -274,7 +274,7 @@ export default function Layout() {
       {isMobile && mobileOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200 }}>
           <div onClick={() => setMobileOpen(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} />
-          <aside style={{ position: 'absolute', top: 0, left: 0, width: SIDEBAR_W, height: '100%', background: 'var(--green-dark)', overflowY: 'auto' }}>
+          <aside style={{ position: 'absolute', top: 0, left: 0, width: SIDEBAR_W, height: '100%', background: 'var(--sidebar-bg)', overflowY: 'auto' }}>
             <SidebarContent />
           </aside>
         </div>
@@ -283,7 +283,7 @@ export default function Layout() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {isMobile && (
           <div style={{
-            background: 'var(--green-dark)',
+            background: 'var(--sidebar-bg)',
             padding: '10px 16px',
             display: 'flex',
             alignItems: 'center',

@@ -5,12 +5,22 @@
   --green-light: #e6f0ea;
   --green-muted: #d0e0d6;
 
+  /* Sidebar background — its own token so it stays a deep forest green in
+     both themes, independent of --green-dark (which lifts in dark mode). */
+  --sidebar-bg: #1a4a2e;
+
   --crimson: #8b1a1a;
   --crimson-light: #fdebeb;
 
   --gold: #c9a227;
   --gold-dark: #8a6f10;
   --gold-light: #fdf6dc;
+
+  /* Status accents — used by Attendance STATUS_STYLES (half day / on leave) */
+  --info: #1e40af;
+  --info-light: rgba(96, 165, 250, 0.15);
+  --leave: #6b21a8;
+  --leave-light: rgba(168, 85, 247, 0.15);
 
   --white: #ffffff;
   --gray-50: #f7f8fa;
@@ -20,6 +30,9 @@
   --gray-400: #a0a4a9;
   --text: #1a1a1a;
   --text-muted: #6b7177;
+
+  /* App background — the body surface, kept distinct from card --white */
+  --app-bg: #f7f8fa;
 
   --font-display: 'Playfair Display', Georgia, serif;
   --font-body: 'DM Sans', -apple-system, 'Segoe UI', sans-serif;
@@ -32,19 +45,58 @@
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.1);
 }
 
+/* ============================================================================
+   PITCH-BLACK DARK MODE
+   Pure-token override — every component is styled through these CSS variables,
+   so nothing else needs to change. Pure #000 page, barely-lifted panels, and
+   hairline borders doing the work instead of shadows.
+   ========================================================================= */
 [data-theme='dark'] {
-  --white: #1a1a1a;
-  --gray-50: #242424;
-  --gray-100: #2a2a2a;
-  --gray-200: #3a3a3a;
-  --gray-300: #4a4a4a;
-  --gray-400: #707070;
-  --text: #f0f0f0;
-  --text-muted: #a0a4a9;
-  --green-light: rgba(42, 107, 68, 0.15);
-  --green-muted: rgba(42, 107, 68, 0.3);
-  --gold-light: rgba(201, 162, 39, 0.15);
-  --crimson-light: rgba(139, 26, 26, 0.15);
+  /* Native widgets (date/time/number inputs, selects, scrollbars) go dark */
+  color-scheme: dark;
+
+  /* Page + surfaces */
+  --app-bg: #000000;       /* body — pitch black */
+  --white: #0f0f11;        /* cards, panels, inputs — barely lifted off black */
+  --gray-50: #161618;      /* hover states, table headers, inset strips */
+  --gray-100: #1c1c1f;     /* dividers, neutral pill backgrounds */
+  --gray-200: #2a2a2e;     /* hairline borders */
+  --gray-300: #3a3a40;     /* switch track, stronger borders */
+  --gray-400: #8c8c94;     /* faint labels / icons */
+
+  /* Text */
+  --text: #ededed;
+  --text-muted: #9a9aa2;
+
+  /* Brand green — lifted so heading + section-title text reads on black,
+     while white-on-green buttons stay legible. */
+  --green-dark: #3f9e68;
+  --green: #46a673;
+  --green-light: rgba(63, 158, 104, 0.16);
+  --green-muted: rgba(63, 158, 104, 0.32);
+
+  /* Sidebar stays a deep near-black green so it reads as a rail on pure black */
+  --sidebar-bg: #11271a;
+
+  /* Crimson — mid red: legible as text and usable as a button background. */
+  --crimson: #db4f53;
+  --crimson-light: rgba(219, 79, 83, 0.15);
+
+  /* Gold */
+  --gold: #d4ad3c;
+  --gold-dark: #e3bd4e;
+  --gold-light: rgba(212, 173, 60, 0.15);
+
+  /* Status accents */
+  --info: #6ea8f0;
+  --info-light: rgba(96, 165, 250, 0.16);
+  --leave: #bd8ef0;
+  --leave-light: rgba(168, 85, 247, 0.18);
+
+  /* Deeper shadows so panels still read as depth against pure black */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.5);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.55);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.65);
 }
 
 * {
@@ -60,7 +112,7 @@ html, body, #root {
 body {
   font-family: var(--font-body);
   color: var(--text);
-  background: var(--gray-50);
+  background: var(--app-bg);
   -webkit-font-smoothing: antialiased;
   font-size: 14px;
   line-height: 1.5;
@@ -72,6 +124,12 @@ button {
 
 input, textarea, select {
   font-family: var(--font-body);
+}
+
+/* Keep placeholder text legible on dark inputs */
+[data-theme='dark'] ::placeholder {
+  color: var(--gray-400);
+  opacity: 1;
 }
 
 a {

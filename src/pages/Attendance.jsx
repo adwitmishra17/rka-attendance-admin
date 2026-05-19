@@ -10,8 +10,8 @@ const STATUS_STYLES = {
   present: { bg: 'var(--green-light)', color: 'var(--green-dark)', label: 'Present' },
   late: { bg: 'var(--gold-light)', color: 'var(--gold-dark)', label: 'Late' },
   absent: { bg: 'var(--crimson-light)', color: 'var(--crimson)', label: 'Absent' },
-  half_day: { bg: 'rgba(96, 165, 250, 0.15)', color: '#1e40af', label: 'Half day' },
-  on_leave: { bg: 'rgba(168, 85, 247, 0.15)', color: '#6b21a8', label: 'On leave' },
+  half_day: { bg: 'var(--info-light)', color: 'var(--info)', label: 'Half day' },
+  on_leave: { bg: 'var(--leave-light)', color: 'var(--leave)', label: 'On leave' },
   holiday: { bg: 'var(--gray-100)', color: 'var(--text-muted)', label: 'Holiday' },
   not_marked: { bg: 'var(--gray-100)', color: 'var(--text-muted)', label: 'Not marked' },
 }
