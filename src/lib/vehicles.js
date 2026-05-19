@@ -274,6 +274,19 @@ export async function softDeleteVehicle({ id, deletedByEmail }) {
   }
 
   const nowIso = new Date().toISOString()
+
+  // Cascade the soft-delete to this vehicle's documents FIRST. Expiry widgets
+  // and the alert digest filter on the document's OWN deleted_at, so unless
+  // the document rows are hidden too, a deleted vehicle's documents keep
+  // showing as "expiring soon". Doing this first makes a failed delete safe to
+  // retry — the .is('deleted_at', null) filter just no-ops on already-done rows.
+  const { error: docErr } = await supabaseAdmin
+    .from('vehicle_documents')
+    .update({ deleted_at: nowIso, deleted_by: deletedByEmail || null })
+    .eq('vehicle_id', id)
+    .is('deleted_at', null)
+  if (docErr) throw docErr
+
   const { data, error } = await supabaseAdmin
     .from('vehicles')
     .update({

@@ -74,6 +74,14 @@ const NAV = [
       </svg>
   },
   {
+    to: '/fleet-settings', label: 'Fleet Settings', icon:
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M4 4h16v4H4z" />
+        <path d="M4 14h16v6H4z" />
+        <path d="M8 4v4M16 14v6" />
+      </svg>
+  },
+  {
     to: '/walkins', label: 'Walk-ins', forReceptionist: true, icon:
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
         <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />

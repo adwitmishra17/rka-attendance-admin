@@ -25,8 +25,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
-const VEHICLE_DOC_TYPES = new Set(["RC", "Insurance", "PUC", "Permit", "Fitness"])
-const DRIVER_DOC_TYPES  = new Set(["DL", "Aadhaar"])
+const VEHICLE_DOC_TYPES = new Set(["RC", "Insurance", "PUC", "Permit", "Fitness", "Photo"])
+const DRIVER_DOC_TYPES = new Set(["DL", "Aadhaar"])
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -62,14 +62,14 @@ serve(async (req) => {
     if (ownerType !== "vehicle" && ownerType !== "driver") {
       return json({ error: "ownerType must be 'vehicle' or 'driver'" }, 400)
     }
-    if (!ownerId)        return json({ error: "ownerId required" }, 400)
-    if (!r2Key)          return json({ error: "r2Key required" }, 400)
-    if (!filename)       return json({ error: "filename required" }, 400)
-    if (!docType)        return json({ error: "docType required" }, 400)
+    if (!ownerId) return json({ error: "ownerId required" }, 400)
+    if (!r2Key) return json({ error: "r2Key required" }, 400)
+    if (!filename) return json({ error: "filename required" }, 400)
+    if (!docType) return json({ error: "docType required" }, 400)
     if (!sizeBytes || !Number.isFinite(sizeBytes)) {
       return json({ error: "sizeBytes required" }, 400)
     }
-    if (!mimeType)       return json({ error: "mimeType required" }, 400)
+    if (!mimeType) return json({ error: "mimeType required" }, 400)
     if (!uploadedByEmail) return json({ error: "uploadedByEmail required" }, 400)
 
     // doc_type must match ownerType's allowed set

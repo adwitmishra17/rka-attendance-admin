@@ -11,6 +11,7 @@ import { applyBranchFilterArray, isAccessibleArray } from '../lib/branchQuery'
 import { BRANCHES, branchLabel } from '../lib/branch'
 import DocumentsTab from '../components/DocumentsTab'
 import EmployeeAttendance from './EmployeeAttendance'
+import EmployeeFleetTab from '../components/EmployeeFleetTab'
 
 // ============================================================================
 // EMPLOYEE PROFILE PAGE
@@ -278,6 +279,10 @@ export default function EmployeeProfile() {
   // Use form values when editing, snapshot otherwise
   const display = isEditing ? form || employee : employee
 
+  // Fleet tab is shown only for staff in the Drivers / Conductors departments
+  const _fleetDeptName = departments?.find(d => d.id === employee?.department_id)?.name
+  const isFleetStaff = _fleetDeptName === 'Drivers' || _fleetDeptName === 'Conductors'
+
   return (
     <div style={{ padding: '32px 36px', maxWidth: 1200, margin: '0 auto' }} className="fade-in">
 
@@ -316,6 +321,7 @@ export default function EmployeeProfile() {
             { key: 'documents', label: 'Documents' },
             { key: 'attendance', label: 'Attendance' },
             { key: 'history', label: 'History' },
+            ...(isFleetStaff ? [{ key: 'fleet', label: 'Fleet' }] : []),
           ].map(t => (
             <button
               key={t.key}
@@ -368,6 +374,7 @@ export default function EmployeeProfile() {
             />
           )}
           {activeTab === 'documents' && <DocumentsTab employee={employee} />}
+          {activeTab === 'fleet' && <EmployeeFleetTab employee={employee} />}
           {activeTab === 'attendance' && <EmployeeAttendance employeeId={employee?.id} />}
           {activeTab === 'history' && <HistoryTab employee={employee} />}
         </>

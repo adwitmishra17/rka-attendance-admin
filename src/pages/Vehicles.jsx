@@ -16,16 +16,18 @@ import {
   VEHICLE_TYPES,
   VEHICLE_STATUSES,
 } from '../lib/vehicles'
+import { listEligibleEmployees } from '../lib/vehicleAssignments'
 
 // ============================================================================
 // VEHICLES
 //
-// Fleet vehicles list — add, edit, soft-delete. Branch-aware (super admin
-// sees both branches via the global BranchSwitcher; branch admins see only
-// their own).
+// Two sections:
+//   1. Fleet vehicles — list, add, edit, soft-delete. Click an RC to open the
+//      detail page (documents, assignments).
+//   2. Unassigned drivers & conductors — HRMS staff in the Drivers/Conductors
+//      departments not currently assigned to any vehicle.
 //
-// Click an RC number to open the vehicle's detail page (documents,
-// assignments).
+// Branch-aware: super admin sees both branches; branch admins see their own.
 // ============================================================================
 
 export default function Vehicles() {
@@ -35,8 +37,13 @@ export default function Vehicles() {
 
   const [vehicles, setVehicles] = useState([])
   const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState(null)   // null | {} (add) | vehicle (edit)
-  const [deleting, setDeleting] = useState(null) // null | vehicle
+  const [editing, setEditing] = useState(null)
+  const [deleting, setDeleting] = useState(null)
+
+  // Unassigned fleet staff
+  const [unassignedDrivers, setUnassignedDrivers] = useState([])
+  const [unassignedConductors, setUnassignedConductors] = useState([])
+  const [loadingStaff, setLoadingStaff] = useState(true)
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('active')
@@ -55,7 +62,39 @@ export default function Vehicles() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [effectiveBranches])
+  // Unassigned drivers + conductors — reuses listEligibleEmployees, which by
+  // definition returns department staff with no active assignment.
+  async function loadStaff() {
+    setLoadingStaff(true)
+    try {
+      const inBranch = (emp) =>
+        !emp.branch_codes ||
+        emp.branch_codes.length === 0 ||
+        emp.branch_codes.some(bc => effectiveBranches.includes(bc))
+
+      let drivers = []
+      let conductors = []
+      try {
+        drivers = (await listEligibleEmployees({ role: 'driver' })).filter(inBranch)
+      } catch (e) {
+        console.warn('drivers fetch:', e.message)
+      }
+      try {
+        conductors = (await listEligibleEmployees({ role: 'conductor' })).filter(inBranch)
+      } catch (e) {
+        console.warn('conductors fetch:', e.message)
+      }
+      setUnassignedDrivers(drivers)
+      setUnassignedConductors(conductors)
+    } finally {
+      setLoadingStaff(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+    loadStaff()
+  }, [effectiveBranches])
 
   const filtered = useMemo(() => {
     let list = vehicles
@@ -132,6 +171,9 @@ export default function Vehicles() {
         </button>
       </div>
 
+      {/* ============ SECTION 1 — VEHICLES ============ */}
+      <SectionHeading title="Fleet vehicles" />
+
       {/* Filters row */}
       <div style={{ marginBottom: 16, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <FilterChips
@@ -175,7 +217,7 @@ export default function Vehicles() {
         />
       </div>
 
-      {/* List */}
+      {/* Vehicles list */}
       <div style={{
         background: 'var(--white)',
         border: '1px solid var(--gray-200)',
@@ -220,6 +262,20 @@ export default function Vehicles() {
         )}
       </div>
 
+      {/* ============ SECTION 2 — UNASSIGNED STAFF ============ */}
+      <div style={{ marginTop: 36 }}>
+        <SectionHeading
+          title="Unassigned drivers & conductors"
+          subtitle="HRMS staff in the Drivers and Conductors departments not currently assigned to any vehicle."
+        />
+        <UnassignedFleetSection
+          drivers={unassignedDrivers}
+          conductors={unassignedConductors}
+          loading={loadingStaff}
+          onOpenEmployee={(id) => navigate(`/employees/${id}`)}
+        />
+      </div>
+
       {/* Edit/Add modal */}
       {editing && (
         <VehicleFormModal
@@ -251,7 +307,119 @@ export default function Vehicles() {
 
 
 // ============================================================================
-// Row — RC is clickable and navigates to the detail page
+// Section heading
+// ============================================================================
+function SectionHeading({ title, subtitle }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <h2 style={{
+        fontSize: 13, fontWeight: 600, color: 'var(--green-dark)',
+        textTransform: 'uppercase', letterSpacing: '0.06em',
+      }}>
+        {title}
+      </h2>
+      {subtitle && (
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+          {subtitle}
+        </p>
+      )}
+    </div>
+  )
+}
+
+
+// ============================================================================
+// Unassigned drivers & conductors
+// ============================================================================
+function UnassignedFleetSection({ drivers, conductors, loading, onOpenEmployee }) {
+  const total = drivers.length + conductors.length
+  const allAssigned = !loading && total === 0
+
+  const rows = [
+    ...drivers.map(e => ({ ...e, role: 'driver' })),
+    ...conductors.map(e => ({ ...e, role: 'conductor' })),
+  ]
+
+  return (
+    <div style={{
+      background: 'var(--white)',
+      border: '1px solid var(--gray-200)',
+      borderRadius: 'var(--radius-lg)',
+      overflow: 'hidden',
+    }}>
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+          Loading…
+        </div>
+      ) : allAssigned ? (
+        <div style={{
+          padding: '24px 18px',
+          textAlign: 'center',
+          background: 'var(--green-light)',
+          border: '1px solid var(--green-muted)',
+          margin: 12,
+          borderRadius: 'var(--radius-sm)',
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--green-dark)' }}>
+            ✓ All Drivers &amp; Conductors in HRMS are assigned to Vehicles
+          </div>
+        </div>
+      ) : (
+        <>
+          <div style={{
+            padding: '10px 18px',
+            background: 'var(--gray-50)',
+            borderBottom: '1px solid var(--gray-200)',
+            fontSize: 11.5, color: 'var(--text-muted)',
+          }}>
+            {drivers.length} driver{drivers.length === 1 ? '' : 's'}
+            {' · '}
+            {conductors.length} conductor{conductors.length === 1 ? '' : 's'}
+            {' awaiting assignment'}
+          </div>
+          {rows.map((e, idx) => (
+            <div
+              key={`${e.role}-${e.id}`}
+              onClick={() => onOpenEmployee(e.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '12px 18px', fontSize: 13, cursor: 'pointer',
+                borderBottom: idx === rows.length - 1 ? 'none' : '1px solid var(--gray-100)',
+                transition: 'background 0.12s',
+              }}
+              onMouseEnter={ev => ev.currentTarget.style.background = 'var(--gray-50)'}
+              onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
+            >
+              <span style={{
+                flex: '0 0 auto', padding: '2px 9px', borderRadius: 999,
+                fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
+                background: e.role === 'driver' ? 'var(--green-light)' : 'var(--gold-light)',
+                color: e.role === 'driver' ? 'var(--green-dark)' : 'var(--gold-dark)',
+              }}>
+                {e.role}
+              </span>
+              <span style={{ flex: 1, minWidth: 0, color: 'var(--text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {e.full_name}
+              </span>
+              {e.employee_code && (
+                <span style={{ flex: '0 0 auto', fontSize: 11, color: 'var(--gray-400)' }}>
+                  #{e.employee_code}
+                </span>
+              )}
+              <span style={{ flex: '0 0 auto', fontSize: 11, color: 'var(--text-muted)' }}>
+                Open →
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
+
+
+// ============================================================================
+// Vehicle row — RC is clickable and navigates to the detail page
 // ============================================================================
 function VehicleRow({ vehicle, last, showBranch, onOpen, onEdit, onDelete }) {
   const v = vehicle
@@ -264,7 +432,6 @@ function VehicleRow({ vehicle, last, showBranch, onOpen, onEdit, onDelete }) {
       borderBottom: last ? 'none' : '1px solid var(--gray-100)',
       fontSize: 13,
     }}>
-      {/* RC number — clickable, navigates to detail page */}
       <div
         onClick={onOpen}
         style={{
