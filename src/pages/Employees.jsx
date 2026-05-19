@@ -281,11 +281,18 @@ export default function Employees() {
                       )}
                     </td>
                     <td style={td}>
-                      {e.is_active ? (
-                        <span style={statusPillActive}>Active</span>
-                      ) : (
-                        <span style={statusPillInactive}>Inactive</span>
-                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                        {e.is_active ? (
+                          <span style={statusPillActive}>Active</span>
+                        ) : (
+                          <span style={statusPillInactive}>Inactive</span>
+                        )}
+                        {e.attendance_exempt && (
+                          <span style={exemptPill} title={e.attendance_exempt_reason || 'Exempt from attendance tracking'}>
+                            Exempt
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td style={{ ...td, textAlign: 'right' }}>
                       <button onClick={(ev) => { ev.stopPropagation(); setEditing(e) }} style={iconBtn} title="Edit">
@@ -400,6 +407,19 @@ const statusPillInactive = {
   borderRadius: 999,
   textTransform: 'uppercase',
   letterSpacing: '0.04em',
+}
+
+const exemptPill = {
+  display: 'inline-block',
+  padding: '2px 10px',
+  fontSize: 10.5,
+  fontWeight: 600,
+  background: 'var(--gold-light)',
+  color: 'var(--gold-dark)',
+  borderRadius: 999,
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+  cursor: 'help',
 }
 
 const iconBtn = {

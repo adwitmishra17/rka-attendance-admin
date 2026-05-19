@@ -66,6 +66,8 @@ export default function Attendance() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [exemptEmployees, setExemptEmployees] = useState([])
+  const [exemptOpen, setExemptOpen] = useState(false)
 
   // Manual punch modal — either { employee, daily } (edit) or { employee: null } (new)
   const [manualPunch, setManualPunch] = useState(null)
@@ -80,12 +82,24 @@ export default function Attendance() {
       // attendance_daily:    scalar NOT NULL → in
       // attendance_events:   scalar NOT NULL → in
       // holidays:            scalar nullable → NULL or in
+      // `attendance_counted_employees` is the single source of truth for who
+      // counts toward attendance: active AND not attendance-exempt. The
+      // exclusion rule lives in that DB view, not here.
       let empQ = supabaseAdmin
-        .from('employees')
+        .from('attendance_counted_employees')
         .select('id, full_name, employee_code, biometric_code, email, branch_codes')
-        .eq('is_active', true)
         .order('full_name', { ascending: true })
       empQ = applyBranchFilterArray(empQ, effectiveBranches)
+
+      // Exempt employees — still active, punches still recorded, but never
+      // counted. Loaded separately only to render the collapsed exempt section.
+      let exemptQ = supabaseAdmin
+        .from('employees')
+        .select('id, full_name, employee_code, biometric_code, email, branch_codes, attendance_exempt_reason')
+        .eq('is_active', true)
+        .eq('attendance_exempt', true)
+        .order('full_name', { ascending: true })
+      exemptQ = applyBranchFilterArray(exemptQ, effectiveBranches)
 
       let dailyQ = supabaseAdmin
         .from('attendance_daily')
@@ -116,18 +130,20 @@ export default function Attendance() {
         .eq('date', selectedDate)
       holQ = applyBranchFilterNullable(holQ, effectiveBranches)
 
-      const [empRes, dailyRes, eventsRes, holidayRes] = await Promise.all([
-        empQ, dailyQ, eventsP, holQ,
+      const [empRes, dailyRes, eventsRes, holidayRes, exemptRes] = await Promise.all([
+        empQ, dailyQ, eventsP, holQ, exemptQ,
       ])
 
       if (empRes.error) throw empRes.error
       if (dailyRes.error) throw dailyRes.error
       if (holidayRes.error) throw holidayRes.error
+      if (exemptRes.error) throw exemptRes.error
 
       setEmployees(empRes.data || [])
       setDailyRecords(dailyRes.data || [])
       setRecentEvents(eventsRes.data || [])
       setHolidaysOnDate(holidayRes.data || [])
+      setExemptEmployees(exemptRes.data || [])
     } catch (e) {
       toast.show('Failed to load attendance: ' + e.message, 'error')
     } finally {
@@ -154,7 +170,9 @@ export default function Attendance() {
   // Combine employees with their daily records.
   // Holiday handling: an employee is "on holiday" if any holiday applies to
   // any of their branches (NULL = global, or branch_code matches one of theirs).
-  const roster = useMemo(() => {
+  // Build both rosters from one place so the counted roster and the exempt
+  // roster apply identical status logic. Stats only ever read `roster`.
+  const { roster, exemptRoster } = useMemo(() => {
     function holidayAppliesTo(emp) {
       if (!holidaysOnDate.length) return null
       // NULL holidays apply to everyone
@@ -164,7 +182,7 @@ export default function Attendance() {
       const branches = Array.isArray(emp.branch_codes) ? emp.branch_codes : []
       return holidaysOnDate.find(h => branches.includes(h.branch_code)) || null
     }
-    return employees.map(e => {
+    function buildRow(e) {
       const daily = dailyByEmployee.get(e.id)
       const empHoliday = holidayAppliesTo(e)
       let effectiveStatus = 'not_marked'
@@ -182,8 +200,12 @@ export default function Attendance() {
         effectiveStatus = 'absent'
       }
       return { employee: e, daily, status: effectiveStatus, holiday: empHoliday }
-    })
-  }, [employees, dailyByEmployee, holidaysOnDate, isToday])
+    }
+    return {
+      roster: employees.map(buildRow),
+      exemptRoster: exemptEmployees.map(buildRow),
+    }
+  }, [employees, exemptEmployees, dailyByEmployee, holidaysOnDate, isToday])
 
   // Stats
   const stats = useMemo(() => {
@@ -216,6 +238,18 @@ export default function Attendance() {
     }
     return list
   }, [roster, statusFilter, search])
+
+  // Exempt section is search-aware but not status-filtered — it is its own
+  // category, separate from present / late / absent.
+  const filteredExempt = useMemo(() => {
+    if (!search.trim()) return exemptRoster
+    const s = search.toLowerCase()
+    return exemptRoster.filter(r =>
+      r.employee.full_name?.toLowerCase().includes(s) ||
+      r.employee.employee_code?.toLowerCase().includes(s) ||
+      r.employee.biometric_code?.toLowerCase().includes(s)
+    )
+  }, [exemptRoster, search])
 
   return (
     <div style={{ padding: '32px 36px', maxWidth: 1280 }}>
@@ -452,6 +486,14 @@ export default function Attendance() {
               ))}
             </div>
           )}
+
+          {/* Exempt employees — collapsed, never counted in the stats above */}
+          <ExemptSection
+            rows={filteredExempt}
+            open={exemptOpen}
+            onToggle={() => setExemptOpen(o => !o)}
+            onRowClick={(row) => setManualPunch({ employee: row.employee, daily: row.daily || null })}
+          />
         </div>
 
         {/* Live feed sidebar */}
@@ -491,7 +533,7 @@ export default function Attendance() {
       {manualPunch && (
         <ManualPunchModal
           date={selectedDate}
-          employees={employees}
+          employees={[...employees, ...exemptEmployees]}
           preEmployee={manualPunch.employee}
           existingDaily={manualPunch.daily}
           adminEmail={user?.email}
@@ -697,6 +739,73 @@ function EmptyState({ message }) {
       textAlign: 'center',
     }}>
       <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{message}</p>
+    </div>
+  )
+}
+
+// ============================================================
+// EXEMPT SECTION
+//
+// Employees marked attendance-exempt. Collapsed by default. These rows are
+// never part of the stat cards or the present / absent counts — exclusion is
+// defined by the `attendance_counted_employees` DB view, which omits them
+// from the main roster query entirely.
+// ============================================================
+function ExemptSection({ rows, open, onToggle, onRowClick }) {
+  if (!rows || rows.length === 0) return null
+  return (
+    <div style={{
+      marginTop: 14,
+      background: 'var(--white)',
+      border: '1px solid var(--gray-200)',
+      borderRadius: 'var(--radius-lg)',
+      overflow: 'hidden',
+    }}>
+      <button
+        onClick={onToggle}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '11px 16px',
+          background: 'var(--gray-50)',
+          border: 'none',
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          textAlign: 'left',
+        }}
+      >
+        <svg
+          width="12" height="12" viewBox="0 0 24 24" fill="none"
+          stroke="var(--text-muted)" strokeWidth="2.5"
+          style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>
+          Exempt from attendance
+        </span>
+        <span style={{
+          fontSize: 10,
+          padding: '1px 7px',
+          borderRadius: 999,
+          background: 'var(--gold-light)',
+          color: 'var(--gold-dark)',
+          fontWeight: 600,
+        }}>{rows.length}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-muted)' }}>
+          Not included in counts above
+        </span>
+      </button>
+      {open && rows.map((row, idx) => (
+        <RosterRow
+          key={row.employee.id}
+          row={row}
+          isLast={idx === rows.length - 1}
+          onClick={() => onRowClick(row)}
+        />
+      ))}
     </div>
   )
 }

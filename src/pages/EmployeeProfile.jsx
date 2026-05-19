@@ -231,6 +231,27 @@ export default function EmployeeProfile() {
         updated_by: user?.email || null,
         updated_at: new Date().toISOString(),
       }
+
+      // Attendance-exempt audit stamping. normaliseProfileForm may strip these
+      // unknown fields, so set them explicitly. Stamp by/at only on the
+      // false → true transition; clear all three when un-exempting.
+      const wasExempt = !!employee?.attendance_exempt
+      const nowExempt = !!form.attendance_exempt
+      payload.attendance_exempt = nowExempt
+      if (nowExempt) {
+        payload.attendance_exempt_reason = form.attendance_exempt_reason?.trim() || null
+        payload.attendance_exempt_by = wasExempt
+          ? (employee.attendance_exempt_by || user?.email || null)
+          : (user?.email || null)
+        payload.attendance_exempt_at = wasExempt
+          ? (employee.attendance_exempt_at || new Date().toISOString())
+          : new Date().toISOString()
+      } else {
+        payload.attendance_exempt_reason = null
+        payload.attendance_exempt_by = null
+        payload.attendance_exempt_at = null
+      }
+
       // Don't try to write fields that aren't columns (defensive)
       delete payload.id  // never overwrite the PK
       delete payload.created_at
@@ -499,6 +520,21 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
               fontFamily: 'var(--font-body)',
             }}>
               Inactive
+            </span>
+          )}
+          {!isEditing && employee.attendance_exempt && (
+            <span style={{
+              fontSize: 10,
+              fontWeight: 600,
+              padding: '2px 8px',
+              background: 'var(--gold-light)',
+              color: 'var(--gold-dark)',
+              borderRadius: 4,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              fontFamily: 'var(--font-body)',
+            }}>
+              Attendance exempt
             </span>
           )}
         </div>
@@ -829,6 +865,19 @@ function EditMode({ form, errors, revealed, allEmployees, departments, reporting
       </Section>
 
       {canSeeSensitive && (
+        <Section title="Attendance" badge="Super admin only">
+          <ExemptToggleField
+            exempt={!!form.attendance_exempt}
+            reason={form.attendance_exempt_reason || ''}
+            stampedBy={form.attendance_exempt_by}
+            stampedAt={form.attendance_exempt_at}
+            onToggle={v => onUpdate('attendance_exempt', v)}
+            onReason={v => onUpdate('attendance_exempt_reason', v)}
+          />
+        </Section>
+      )}
+
+      {canSeeSensitive && (
         <Section title="Bank account" badge="Super admin only">
           <FormField label="Bank">
             <Input value={form.bank_name} onChange={v => onUpdate('bank_name', v)} />
@@ -932,6 +981,84 @@ function AuditNotice() {
     }}>
       <strong style={{ color: 'var(--gold-dark)' }}>Logged:</strong> Revealing or changing these fields adds an entry to the activity log.
     </div>
+  )
+}
+
+
+function Toggle({ on, onChange, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={() => !disabled && onChange(!on)}
+      style={{
+        width: 38, height: 22,
+        background: on ? 'var(--green)' : 'var(--gray-300)',
+        borderRadius: 999,
+        position: 'relative',
+        border: 'none',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'background 0.2s',
+        padding: 0,
+        flexShrink: 0,
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <span style={{
+        position: 'absolute',
+        top: 2,
+        left: on ? 18 : 2,
+        width: 18, height: 18,
+        background: 'white',
+        borderRadius: '50%',
+        transition: 'left 0.2s',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+      }} />
+    </button>
+  )
+}
+
+// Attendance-exempt control. Super-admin only (gated by the caller). When on,
+// the employee is dropped from rosters and stats via the
+// `attendance_counted_employees` DB view. Punches are still recorded.
+function ExemptToggleField({ exempt, reason, stampedBy, stampedAt, onToggle, onReason }) {
+  return (
+    <>
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 12,
+      }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>
+            Exempt from attendance
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.5 }}>
+            Excludes this employee from attendance rosters and present / absent
+            stats. Their punches are still recorded.
+          </div>
+        </div>
+        <Toggle on={exempt} onChange={onToggle} />
+      </div>
+      {exempt && (
+        <>
+          <FormField label="Reason" hint="Why this employee is exempt">
+            <Textarea
+              value={reason}
+              onChange={onReason}
+              rows={2}
+              placeholder="e.g. Senior management, off-site role, no fixed schedule"
+            />
+          </FormField>
+          {stampedBy && (
+            <div style={{ fontSize: 10.5, color: 'var(--gray-400)', letterSpacing: '0.03em' }}>
+              Marked exempt by {stampedBy}
+              {stampedAt && <> · {fmtRelative(stampedAt)}</>}
+            </div>
+          )}
+        </>
+      )}
+    </>
   )
 }
 
@@ -1040,6 +1167,15 @@ function OverviewTab({ employee, reportingManager, departments, canSeeSensitive,
         <Field label="Out time" value={fmtTime(employee.custom_out_time)} />
         <Field label="Grace minutes" value={employee.custom_grace_minutes} />
       </Section>
+
+      {employee.attendance_exempt && (
+        <Section title="Attendance" badge="Exempt">
+          <Field label="Status" value="Exempt from attendance tracking" />
+          <Field label="Reason" value={employee.attendance_exempt_reason} multiline />
+          <Field label="Marked by" value={employee.attendance_exempt_by} />
+          <Field label="Marked on" value={fmtDate(employee.attendance_exempt_at)} />
+        </Section>
+      )}
 
       {canSeeSensitive && (
         <Section title="Bank account" badge="Super admin only">

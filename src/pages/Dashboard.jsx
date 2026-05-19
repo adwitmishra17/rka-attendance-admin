@@ -55,22 +55,28 @@ export default function Dashboard() {
         let empQ = supabase.from('employees').select('id', { count: 'exact', head: true })
         empQ = applyBranchFilterArray(empQ, effectiveBranches)
 
-        // active employees only — denominator for "X of Y present"
-        let activeQ = supabase.from('employees').select('id', { count: 'exact', head: true }).eq('is_active', true)
+        // active, non-exempt employees — denominator for "X of Y present".
+        // Reads the attendance_counted_employees view (active AND not exempt)
+        // so exempt staff never inflate the attendance ratio.
+        let activeQ = supabase.from('attendance_counted_employees').select('id', { count: 'exact', head: true })
         activeQ = applyBranchFilterArray(activeQ, effectiveBranches)
 
         // holidays: branch_code nullable, NULL = applies to both
         let holQ = supabase.from('holidays').select('id', { count: 'exact', head: true })
         holQ = applyBranchFilterNullable(holQ, effectiveBranches)
 
-        // present today: count of attendance_daily rows for today with status='present'
-        // attendance_daily.branch_code is NOT NULL single-value, so .in() with the
-        // effective branch list handles both single-branch and All-Branches views.
+        // present today: count of attendance_daily rows for today with
+        // status='present'. The employees!inner join + exempt filter drops
+        // exempt staff so they can't inflate the numerator — their punches
+        // are still recorded, just not counted here.
+        // attendance_daily.branch_code is NOT NULL single-value, so .in() with
+        // the effective branch list handles single-branch and All-Branches.
         let presentQ = supabase
           .from('attendance_daily')
-          .select('id', { count: 'exact', head: true })
+          .select('id, employees!inner(attendance_exempt)', { count: 'exact', head: true })
           .eq('date', today)
           .eq('status', 'present')
+          .eq('employees.attendance_exempt', false)
         if (effectiveBranches.length > 0) presentQ = presentQ.in('branch_code', effectiveBranches)
 
         // device status: most recent event_time + count of distinct devices
