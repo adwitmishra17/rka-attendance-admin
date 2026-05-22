@@ -39,6 +39,7 @@ const BRANCHES = [
 const MODULE_INFO = [
   { value: 'tracker', label: 'Academic Tracker', desc: 'Lessons, tests, syllabus' },
   { value: 'hrms',    label: 'HRMS Portal',      desc: 'Employees, attendance, walk-ins' },
+  { value: 'sms',     label: 'Student Mgmt',     desc: 'Students, admissions, fees' },
 ]
 
 export default function AdminUsers() {
@@ -52,6 +53,7 @@ export default function AdminUsers() {
   // Add modal state
   const [showAdd, setShowAdd] = useState(false)
   const [newEmail, setNewEmail] = useState('')
+  const [newPhone, setNewPhone] = useState('')
   const [newName, setNewName] = useState('')
   const [newRole, setNewRole] = useState('admin')
   const [newBranch, setNewBranch] = useState('MAIN')
@@ -62,6 +64,8 @@ export default function AdminUsers() {
   // Edit modal state
   const [editing, setEditing] = useState(null)
   const [editName, setEditName] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+  const [editPhone, setEditPhone] = useState('')
   const [editRole, setEditRole] = useState('admin')
   const [editBranch, setEditBranch] = useState('MAIN')
   const [editModules, setEditModules] = useState([...DEFAULT_MODULES])
@@ -86,7 +90,7 @@ export default function AdminUsers() {
   }
 
   function openAdd() {
-    setNewEmail(''); setNewName(''); setNewRole('admin'); setNewBranch('MAIN')
+    setNewEmail(''); setNewPhone(''); setNewName(''); setNewRole('admin'); setNewBranch('MAIN')
     setNewModules([...DEFAULT_MODULES])
     setAddError('')
     setShowAdd(true)
@@ -98,6 +102,7 @@ export default function AdminUsers() {
     try {
       await createAdmin({
         email: newEmail,
+        phone: newPhone,
         fullName: newName,
         role: newRole,
         branchCode: newBranch,
@@ -116,6 +121,9 @@ export default function AdminUsers() {
   function openEdit(a) {
     setEditing(a)
     setEditName(a.fullName || '')
+    setEditEmail(a.email || '')
+    // Pre-fill phone from either lowercase `phone` (preferred) or legacy `Phone`.
+    setEditPhone(a.phone || a.Phone || '')
     setEditRole(ROLES.find(r => r.value === a.role) ? a.role : 'admin')
     setEditBranch(BRANCHES.find(b => b.value === a.branchCode) ? a.branchCode : 'MAIN')
     setEditModules(adminModules(a))
@@ -130,6 +138,10 @@ export default function AdminUsers() {
       await updateAdmin({
         id: editing.id,
         fullName: editName,
+        // Email only sent when the admin is phone-only (UUID doc id). For
+        // email-keyed admins the email IS the doc id, so it can't change here.
+        email: editing.email ? undefined : editEmail,
+        phone: editPhone,    // empty string clears phone (if email is present)
         role: editRole,
         branchCode: editBranch,
         modules: editRole === 'receptionist' ? ['hrms'] : editModules,
@@ -257,8 +269,13 @@ export default function AdminUsers() {
                             {inactive && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--crimson)', fontWeight: 600 }}>· Deactivated</span>}
                           </div>
                           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {a.email || a.id}
+                            {a.email || (a.phone || a.Phone) || a.id}
                           </div>
+                          {a.email && (a.phone || a.Phone) && (
+                            <div style={{ fontSize: 11, color: 'var(--gray-400)', whiteSpace: 'nowrap' }}>
+                              {a.phone || a.Phone}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -325,7 +342,7 @@ export default function AdminUsers() {
       {/* Add Modal */}
       {showAdd && (
         <Modal title="Add New Admin" onClose={() => !submitting && setShowAdd(false)}>
-          <Field label="Email" required>
+          <Field label="Email">
             <input
               value={newEmail}
               onChange={e => setNewEmail(e.target.value)}
@@ -334,7 +351,19 @@ export default function AdminUsers() {
               style={inp}
               autoFocus
             />
-            <p style={hint}>Must match the Google account they'll sign in with. Case-insensitive.</p>
+            <p style={hint}>Used for Google sign-in. Case-insensitive.</p>
+          </Field>
+          <Field label="Mobile">
+            <input
+              value={newPhone}
+              onChange={e => setNewPhone(e.target.value)}
+              placeholder="e.g. 9876543210"
+              inputMode="numeric"
+              autoComplete="tel"
+              disabled={submitting}
+              style={inp}
+            />
+            <p style={hint}>Used for OTP sign-in in SMS. 10-digit Indian number. At least one of Email or Mobile is required.</p>
           </Field>
           <Field label="Full Name" required>
             <input
@@ -357,8 +386,8 @@ export default function AdminUsers() {
           {addError && <div style={errBox}>{addError}</div>}
           <button
             onClick={handleAdd}
-            disabled={submitting || !newEmail.trim() || !newName.trim()}
-            style={modalSaveBtn(submitting || !newEmail.trim() || !newName.trim())}
+            disabled={submitting || !newName.trim() || (!newEmail.trim() && !newPhone.trim())}
+            style={modalSaveBtn(submitting || !newName.trim() || (!newEmail.trim() && !newPhone.trim()))}
           >
             {submitting ? 'Adding…' : 'Add Admin'}
           </button>
@@ -369,7 +398,12 @@ export default function AdminUsers() {
       {editing && (
         <Modal title="Edit Admin" onClose={() => !editSubmitting && setEditing(null)}>
           <div style={{ background: 'var(--gray-50)', borderRadius: 'var(--radius-sm)', padding: '10px 12px' }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{editing.email || editing.id}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {editing.email || (editing.phone || editing.Phone) || editing.id}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 2 }}>
+              {editing.email ? 'Email-keyed admin' : 'Phone-only admin'}
+            </div>
           </div>
           <Field label="Full Name" required>
             <input
@@ -378,6 +412,36 @@ export default function AdminUsers() {
               disabled={editSubmitting}
               style={inp}
             />
+          </Field>
+          <Field label="Email">
+            <input
+              value={editing.email ? editing.email : editEmail}
+              onChange={e => setEditEmail(e.target.value)}
+              placeholder="e.g. priya@rkacademyballia.in"
+              disabled={editSubmitting || !!editing.email}
+              style={{ ...inp, opacity: editing.email ? 0.7 : 1 }}
+            />
+            <p style={hint}>
+              {editing.email
+                ? "Can't be changed — email is this admin's permanent identifier."
+                : 'Optional. Add to enable Google sign-in for this phone-only admin.'}
+            </p>
+          </Field>
+          <Field label="Mobile">
+            <input
+              value={editPhone}
+              onChange={e => setEditPhone(e.target.value)}
+              placeholder="10-digit Indian number"
+              inputMode="numeric"
+              autoComplete="tel"
+              disabled={editSubmitting}
+              style={inp}
+            />
+            <p style={hint}>
+              {editing.email
+                ? 'Optional. Used for OTP sign-in in SMS. Leave blank to clear.'
+                : 'Required for this phone-only admin.'}
+            </p>
           </Field>
           <Field label="Role">
             <RoleRadios value={editRole} onChange={setEditRole} disabled={editSubmitting} />
