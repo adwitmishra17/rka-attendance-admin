@@ -8,6 +8,7 @@ import {
   setAdminActive,
   deleteAdmin,
   adminModules,
+  adminBranches,
   DEFAULT_MODULES,
 } from '../lib/admins'
 
@@ -56,7 +57,7 @@ export default function AdminUsers() {
   const [newPhone, setNewPhone] = useState('')
   const [newName, setNewName] = useState('')
   const [newRole, setNewRole] = useState('admin')
-  const [newBranch, setNewBranch] = useState('MAIN')
+  const [newBranches, setNewBranches] = useState(['MAIN'])
   const [newModules, setNewModules] = useState([...DEFAULT_MODULES])
   const [submitting, setSubmitting] = useState(false)
   const [addError, setAddError] = useState('')
@@ -67,7 +68,7 @@ export default function AdminUsers() {
   const [editEmail, setEditEmail] = useState('')
   const [editPhone, setEditPhone] = useState('')
   const [editRole, setEditRole] = useState('admin')
-  const [editBranch, setEditBranch] = useState('MAIN')
+  const [editBranches, setEditBranches] = useState(['MAIN'])
   const [editModules, setEditModules] = useState([...DEFAULT_MODULES])
   const [editSubmitting, setEditSubmitting] = useState(false)
   const [editError, setEditError] = useState('')
@@ -90,7 +91,8 @@ export default function AdminUsers() {
   }
 
   function openAdd() {
-    setNewEmail(''); setNewPhone(''); setNewName(''); setNewRole('admin'); setNewBranch('MAIN')
+    setNewEmail(''); setNewPhone(''); setNewName(''); setNewRole('admin')
+    setNewBranches(['MAIN'])
     setNewModules([...DEFAULT_MODULES])
     setAddError('')
     setShowAdd(true)
@@ -105,7 +107,7 @@ export default function AdminUsers() {
         phone: newPhone,
         fullName: newName,
         role: newRole,
-        branchCode: newBranch,
+        branchCodes: newBranches,
         modules: newRole === 'receptionist' ? ['hrms'] : newModules,
         currentUser: user,
       })
@@ -125,7 +127,9 @@ export default function AdminUsers() {
     // Pre-fill phone from either lowercase `phone` (preferred) or legacy `Phone`.
     setEditPhone(a.phone || a.Phone || '')
     setEditRole(ROLES.find(r => r.value === a.role) ? a.role : 'admin')
-    setEditBranch(BRANCHES.find(b => b.value === a.branchCode) ? a.branchCode : 'MAIN')
+    // Pre-fill branches from new array form or fallback to legacy singular field.
+    const existingBranches = adminBranches(a)
+    setEditBranches(existingBranches.length > 0 ? existingBranches : ['MAIN'])
     setEditModules(adminModules(a))
     setEditError('')
   }
@@ -143,7 +147,7 @@ export default function AdminUsers() {
         email: editing.email ? undefined : editEmail,
         phone: editPhone,    // empty string clears phone (if email is present)
         role: editRole,
-        branchCode: editBranch,
+        branchCodes: editBranches,
         modules: editRole === 'receptionist' ? ['hrms'] : editModules,
         currentUser: user,
       })
@@ -248,7 +252,6 @@ export default function AdminUsers() {
             <tbody>
               {admins.map(a => {
                 const inactive = a.isActive === false
-                const branch = BRANCHES.find(b => b.value === a.branchCode)
                 const isLegacySuper = a.role === 'super_admin'
                 return (
                   <tr key={a.id} style={{ borderTop: '1px solid var(--gray-100)', opacity: inactive ? 0.55 : 1, verticalAlign: 'middle' }}>
@@ -289,11 +292,27 @@ export default function AdminUsers() {
                       )}
                     </td>
                     <td style={td}>
-                      {branch ? (
-                        <span style={pill('var(--gray-50)', 'var(--text)')}>{branch.label}</span>
-                      ) : (
-                        <span style={pill('var(--crimson-light)', 'var(--crimson)')}>Needs setup</span>
-                      )}
+                      {(() => {
+                        const codes = adminBranches(a)
+                        if (codes.length === 0) {
+                          return <span style={pill('var(--crimson-light)', 'var(--crimson)')}>Needs setup</span>
+                        }
+                        if (codes.length === BRANCHES.length) {
+                          return <span style={pill('var(--green-light)', 'var(--green-dark)')}>All branches</span>
+                        }
+                        return (
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {codes.map(code => {
+                              const meta = BRANCHES.find(b => b.value === code)
+                              return (
+                                <span key={code} style={pill('var(--gray-50)', 'var(--text)')}>
+                                  {meta?.label || code}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        )
+                      })()}
                     </td>
                     <td style={{ ...td, color: 'var(--text-muted)', fontSize: 11.5 }}>
                       <div style={{ whiteSpace: 'nowrap' }}>{a.addedByName || 'System'}</div>
@@ -377,8 +396,8 @@ export default function AdminUsers() {
           <Field label="Role">
             <RoleRadios value={newRole} onChange={setNewRole} disabled={submitting} />
           </Field>
-          <Field label="Branch">
-            <BranchRadios value={newBranch} onChange={setNewBranch} disabled={submitting} />
+          <Field label="Branches">
+            <BranchChecks value={newBranches} onChange={setNewBranches} disabled={submitting} />
           </Field>
           <Field label="Apps">
             <ModulesPicker value={newModules} onChange={setNewModules} role={newRole} disabled={submitting} />
@@ -451,8 +470,8 @@ export default function AdminUsers() {
               </p>
             )}
           </Field>
-          <Field label="Branch">
-            <BranchRadios value={editBranch} onChange={setEditBranch} disabled={editSubmitting} />
+          <Field label="Branches">
+            <BranchChecks value={editBranches} onChange={setEditBranches} disabled={editSubmitting} />
           </Field>
           <Field label="Apps">
             <ModulesPicker value={editModules} onChange={setEditModules} role={editRole} disabled={editSubmitting} />
@@ -540,25 +559,47 @@ function RoleRadios({ value, onChange, disabled }) {
   )
 }
 
-function BranchRadios({ value, onChange, disabled }) {
+function BranchChecks({ value, onChange, disabled }) {
+  const set = new Set(value || [])
+  function toggle(code) {
+    if (disabled) return
+    const next = new Set(set)
+    if (next.has(code)) {
+      if (next.size <= 1) return   // must keep at least one branch
+      next.delete(code)
+    } else {
+      next.add(code)
+    }
+    onChange([...next])
+  }
   return (
-    <div style={{ display: 'flex', gap: 10 }}>
-      {BRANCHES.map(b => (
-        <label key={b.value} style={radioCard(value === b.value, disabled)}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="radio" name="branch-radio" value={b.value}
-              checked={value === b.value}
-              onChange={() => onChange(b.value)}
-              disabled={disabled}
-            />
-            <span style={{ fontSize: 13, fontWeight: 600, color: value === b.value ? 'var(--green-dark)' : 'var(--text)' }}>
-              {b.label}
-            </span>
-          </div>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 22 }}>{b.desc}</span>
-        </label>
-      ))}
+    <div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        {BRANCHES.map(b => {
+          const checked = set.has(b.value)
+          return (
+            <label key={b.value} style={radioCard(checked, disabled)}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(b.value)}
+                  disabled={disabled}
+                />
+                <span style={{ fontSize: 13, fontWeight: 600, color: checked ? 'var(--green-dark)' : 'var(--text)' }}>
+                  {b.label}
+                </span>
+              </div>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 22 }}>{b.desc}</span>
+            </label>
+          )
+        })}
+      </div>
+      {value && value.length === BRANCHES.length && (
+        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+          All branches selected — this admin has cross-branch access (same scope as super admin).
+        </p>
+      )}
     </div>
   )
 }

@@ -47,9 +47,36 @@ import { db } from './firebase'
 import { SUPER_ADMIN_EMAIL } from '../App'
 
 const ROLES = ['admin', 'receptionist']
-const BRANCHES = ['MAIN', 'CITY']
+export const BRANCHES = ['MAIN', 'CITY']
 export const MODULES = ['tracker', 'hrms', 'sms']
-export const DEFAULT_MODULES = ['tracker', 'hrms']
+export const DEFAULT_MODULES = ['tracker', 'hrms', 'sms']
+
+/**
+ * Validate + normalise a branchCodes selection. Accepts either an array
+ * (preferred) or a single string (legacy). Returns the cleaned array.
+ * Throws when empty or contains unknown branch codes.
+ */
+function normaliseBranches(input) {
+  const arr = Array.isArray(input) ? input : (input ? [input] : [])
+  const cleaned = [...new Set(arr.filter(b => BRANCHES.includes(b)))]
+  if (cleaned.length === 0) throw new Error('Pick at least one branch')
+  return cleaned
+}
+
+/**
+ * Read the branches granted to an admin doc. Accepts the new `branchCodes`
+ * array and falls back to the legacy singular `branchCode` field.
+ */
+export function adminBranches(adminDoc) {
+  if (!adminDoc) return []
+  if (Array.isArray(adminDoc.branchCodes) && adminDoc.branchCodes.length > 0) {
+    return adminDoc.branchCodes.filter(b => BRANCHES.includes(b))
+  }
+  if (adminDoc.branchCode && BRANCHES.includes(adminDoc.branchCode)) {
+    return [adminDoc.branchCode]
+  }
+  return []
+}
 
 /**
  * Normalise an Indian mobile to E.164 (+91XXXXXXXXXX) or return null.
@@ -126,10 +153,11 @@ export async function listAdmins() {
  * - Phone-only admins → doc id is a random UUID (since the email-as-id
  *   convention can't apply when email is null).
  */
-export async function createAdmin({ email, phone, fullName, role, branchCode, modules, currentUser }) {
+export async function createAdmin({ email, phone, fullName, role, branchCode, branchCodes, modules, currentUser }) {
   const e = (email || '').trim().toLowerCase()
   const n = (fullName || '').trim()
   const p = phone ? normalisePhone(phone) : null
+  const branches = normaliseBranches(branchCodes ?? branchCode)
 
   if (!n) throw new Error('Full name is required')
   if (!e && !p) throw new Error('Provide an email, a mobile number, or both')
@@ -137,7 +165,6 @@ export async function createAdmin({ email, phone, fullName, role, branchCode, mo
   if (phone && !p) throw new Error('Invalid mobile number. Use a 10-digit Indian number.')
   if (e === SUPER_ADMIN_EMAIL) throw new Error('This email is already the super admin')
   if (!ROLES.includes(role)) throw new Error('Pick a role')
-  if (!BRANCHES.includes(branchCode)) throw new Error('Pick a branch')
   if (!currentUser?.uid) throw new Error('Not signed in')
 
   const cleanModules = normaliseModules(role, modules)
@@ -162,7 +189,11 @@ export async function createAdmin({ email, phone, fullName, role, branchCode, mo
     phone: p,
     fullName: n,
     role,
-    branchCode,
+    // Write both `branchCodes` (new, canonical) AND `branchCode` (the first one)
+    // so legacy reads — including the tracker's existing code — keep working
+    // until they migrate to the array form.
+    branchCodes: branches,
+    branchCode: branches[0],
     modules: cleanModules,
     isActive: true,
     addedById: currentUser.uid,
@@ -191,11 +222,10 @@ async function findAdminIdByPhone(phoneE164) {
  * fixed (it's the document key). Pass only the fields that should change;
  * others are left alone.
  */
-export async function updateAdmin({ id, fullName, role, branchCode, modules, phone, email, currentUser }) {
+export async function updateAdmin({ id, fullName, role, branchCode, branchCodes, modules, phone, email, currentUser }) {
   if (!id) throw new Error('Admin id is required')
   if (id === SUPER_ADMIN_EMAIL) throw new Error('Super admin cannot be modified')
   if (role && !ROLES.includes(role)) throw new Error('Pick a role')
-  if (branchCode && !BRANCHES.includes(branchCode)) throw new Error('Pick a branch')
   if (!currentUser?.uid) throw new Error('Not signed in')
 
   const updates = {
@@ -209,7 +239,14 @@ export async function updateAdmin({ id, fullName, role, branchCode, modules, pho
     updates.fullName = trimmed
   }
   if (role) updates.role = role
-  if (branchCode) updates.branchCode = branchCode
+
+  // Branches: accept either array (new) or single string (legacy callers).
+  // Write both fields so existing readers keep working.
+  if (branchCodes !== undefined || branchCode !== undefined) {
+    const branches = normaliseBranches(branchCodes ?? branchCode)
+    updates.branchCodes = branches
+    updates.branchCode = branches[0]
+  }
 
   // Email may be added (or cleared) on phone-only admins only. The doc id of
   // an email-keyed admin IS the email, so changing it would orphan the doc.
