@@ -179,15 +179,30 @@ export default function MonthlyReport() {
     URL.revokeObjectURL(url)
   }
 
-  // Per-employee CSV — a day-by-day sheet for ONE employee (payroll / disputes),
-  // as opposed to the collective per-employee summary above.
+  // Per-employee PDF — a branded day-by-day sheet for ONE employee
+  // (payroll / disputes), as opposed to the collective summary above.
   const STATUS_LABEL = {
     present: 'Present', late: 'Late', half_day: 'Half day',
     on_leave: 'On leave', absent: 'Absent', not_marked: 'Not marked',
   }
   const fmtT = (t) => (t ? String(t).slice(0, 5) : '')
 
-  async function downloadEmployeeCsv() {
+  // Downscale /crest.png to a small data-URL so the PDF stays light.
+  async function loadCrest(maxDim = 240) {
+    try {
+      const img = new Image()
+      img.src = '/crest.png'
+      await img.decode()
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
+      const c = document.createElement('canvas')
+      c.width = Math.round(img.width * scale)
+      c.height = Math.round(img.height * scale)
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+      return c.toDataURL('image/png')
+    } catch { return null }  // no logo → PDF still generates
+  }
+
+  async function downloadEmployeePdf() {
     const emp = rows.find(r => r.id === empId)
     if (!emp) return
     setEmpBusy(true)
@@ -206,46 +221,141 @@ export default function MonthlyReport() {
       const holidaySet = new Set(holidayDates)
       const today = todayInKolkata()
 
-      const escape = (v) => `"${(v == null ? '' : String(v)).replace(/"/g, '""')}"`
-      const lines = []
-      lines.push(['Employee', emp.name, 'Code', emp.biometric_code, 'Branch', emp.branch, 'Month', prettyMonth(month)].map(escape).join(','))
-      lines.push('')
-      lines.push(['Date', 'Day', 'Status', 'In', 'Out', 'Late mins', 'Early-out mins', 'Notes'].map(escape).join(','))
-
-      let present = 0, lateMins = 0, earlyMins = 0
-      // Walk every calendar day of the month, but stop at today (no future rows).
+      // Build the day grid (stop at today — no future rows) + per-status tallies.
+      const body = []       // table rows
+      const kinds = []      // per-row kind for styling: status key | 'sunday' | 'holiday' | 'unmarked'
+      const tally = { present: 0, late: 0, half_day: 0, on_leave: 0, absent: 0 }
+      let lateMins = 0, earlyMins = 0
       for (let d = new Date(monthStart + 'T00:00:00'); ; d.setDate(d.getDate() + 1)) {
         const iso = d.toLocaleDateString('en-CA')
         if (iso >= monthEnd || iso > today) break
         const dow = d.getDay()
         const dayName = d.toLocaleDateString('en-US', { weekday: 'long' })
         const ad = byDate.get(iso)
-        let status
-        if (ad?.status) status = STATUS_LABEL[ad.status] || ad.status
-        else if (dow === 0) status = 'Sunday (weekly off)'
-        else if (holidaySet.has(iso)) status = 'Holiday'
-        else status = 'Absent (not marked)'
-        if (ad?.status === 'present') present++
+        let status, kind
+        if (ad?.status) {
+          status = STATUS_LABEL[ad.status] || ad.status
+          kind = ad.status
+          if (tally[ad.status] != null) tally[ad.status]++
+        } else if (dow === 0) { status = 'Sunday — weekly off'; kind = 'sunday' }
+        else if (holidaySet.has(iso)) { status = 'Holiday'; kind = 'holiday' }
+        else { status = 'Absent (not marked)'; kind = 'unmarked'; tally.absent++ }
         lateMins += ad?.late_minutes || 0
         earlyMins += ad?.early_leave_minutes || 0
-        lines.push([iso, dayName, status, fmtT(ad?.in_time), fmtT(ad?.out_time),
-          ad?.late_minutes || 0, ad?.early_leave_minutes || 0, ad?.notes || ''].map(escape).join(','))
+        const dd = String(d.getDate()).padStart(2, '0')
+        body.push([`${dd} ${d.toLocaleDateString('en-US', { month: 'short' })}`, dayName, status,
+          fmtT(ad?.in_time) || '—', fmtT(ad?.out_time) || '—',
+          ad?.late_minutes || 0, ad?.early_leave_minutes || 0, ad?.notes || ''])
+        kinds.push(kind)
       }
+      if (body.length === 0) throw new Error('No attendance days in this month yet.')
 
-      lines.push('')
-      lines.push(['Totals', '', '', '', '', '', '', ''].map(escape).join(','))
-      lines.push(['Expected days', stats.expected, 'Present', present, 'Absent', Math.max(0, stats.expected - present), 'Late mins', lateMins].map(escape).join(','))
+      // PDF libs are dynamically imported so the main bundle stays lean.
+      const [{ jsPDF }, autoTableMod, crest] = await Promise.all([
+        import('jspdf'), import('jspdf-autotable'), loadCrest(),
+      ])
+      const autoTable = autoTableMod.default
 
-      const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
+      const GREEN = [26, 74, 46], GOLD = [201, 162, 39], GRAY = [120, 126, 120]
+      const STATUS_COLOR = {
+        present: [10, 125, 58], late: [165, 91, 0], half_day: [165, 91, 0],
+        on_leave: [30, 64, 175], absent: [139, 26, 26], unmarked: [139, 26, 26],
+        not_marked: [139, 26, 26], sunday: GRAY, holiday: GRAY,
+      }
+      const M = 14                               // page margin (mm)
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+      const pageW = doc.internal.pageSize.getWidth()
+
+      // ── Header: crest + school name + report meta ──
+      if (crest) doc.addImage(crest, 'PNG', M, 11, 21, 21)
+      doc.setFont('helvetica', 'bold').setFontSize(16).setTextColor(...GREEN)
+      doc.text('RADHAKRISHNA ACADEMY', M + 26, 19)
+      doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(...GRAY)
+      doc.text('Employee Attendance Report', M + 26, 25.5)
+      doc.setFont('helvetica', 'bold').setFontSize(11).setTextColor(40, 40, 40)
+      doc.text(prettyMonth(month), pageW - M, 19, { align: 'right' })
+      doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...GRAY)
+      doc.text(branchLabel(currentBranch), pageW - M, 25, { align: 'right' })
+      doc.setDrawColor(...GOLD).setLineWidth(0.8)
+      doc.line(M, 35, pageW - M, 35)
+
+      // ── Employee info band ──
+      const info = [
+        ['EMPLOYEE', emp.name], ['CODE', emp.biometric_code],
+        ['BRANCH', emp.branch], ['GENERATED', new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })],
+      ]
+      let ix = M
+      const colW = (pageW - 2 * M) / info.length
+      info.forEach(([label, value]) => {
+        doc.setFont('helvetica', 'bold').setFontSize(7).setTextColor(...GRAY)
+        doc.text(label, ix, 41.5)
+        doc.setFont('helvetica', 'bold').setFontSize(10.5).setTextColor(30, 30, 30)
+        doc.text(String(value ?? '—'), ix, 46.5)
+        ix += colW
+      })
+
+      // ── Day-by-day table ──
+      autoTable(doc, {
+        startY: 51,
+        margin: { left: M, right: M, bottom: 18 },
+        head: [['Date', 'Day', 'Status', 'In', 'Out', 'Late (min)', 'Early-out (min)', 'Notes']],
+        body,
+        theme: 'plain',
+        styles: { font: 'helvetica', fontSize: 8.3, cellPadding: { top: 1.7, bottom: 1.7, left: 2, right: 2 }, textColor: [45, 45, 45], lineColor: [225, 229, 225], lineWidth: { bottom: 0.15 } },
+        headStyles: { fillColor: GREEN, textColor: 255, fontStyle: 'bold', fontSize: 8.4, lineWidth: 0 },
+        alternateRowStyles: { fillColor: [247, 249, 247] },
+        columnStyles: {
+          0: { cellWidth: 18, fontStyle: 'bold' }, 1: { cellWidth: 22 }, 2: { cellWidth: 34 },
+          3: { cellWidth: 13, halign: 'center' }, 4: { cellWidth: 13, halign: 'center' },
+          5: { cellWidth: 17, halign: 'right' }, 6: { cellWidth: 22, halign: 'right' },
+        },
+        didParseCell: (d) => {
+          if (d.section !== 'body') return
+          const kind = kinds[d.row.index]
+          if (kind === 'sunday' || kind === 'holiday') {
+            d.cell.styles.fillColor = [240, 242, 240]
+            d.cell.styles.textColor = GRAY
+            d.cell.styles.fontStyle = d.column.index === 2 ? 'italic' : 'normal'
+          } else if (d.column.index === 2) {
+            d.cell.styles.textColor = STATUS_COLOR[kind] || [45, 45, 45]
+            d.cell.styles.fontStyle = 'bold'
+          }
+        },
+        didDrawPage: () => {
+          const ph = doc.internal.pageSize.getHeight()
+          doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(...GRAY)
+          doc.text('Radhakrishna Academy · HRMS', M, ph - 9)
+          doc.text(`Page ${doc.internal.getCurrentPageInfo().pageNumber}`, pageW - M, ph - 9, { align: 'right' })
+        },
+      })
+
+      // ── Summary band ──
+      let y = doc.lastAutoTable.finalY + 7
+      const ph = doc.internal.pageSize.getHeight()
+      if (y > ph - 46) { doc.addPage(); y = 24 }
+      doc.setFillColor(237, 243, 238)
+      doc.roundedRect(M, y, pageW - 2 * M, 13, 2, 2, 'F')
+      doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...GRAY)
+      doc.text('SUMMARY', M + 4, y + 5)
+      doc.setFont('helvetica', 'bold').setFontSize(9.5).setTextColor(...GREEN)
+      const absent = Math.max(tally.absent, Math.max(0, stats.expected - (tally.present + tally.late + tally.half_day + tally.on_leave)))
+      doc.text(
+        `Expected ${stats.expected}   ·   Present ${tally.present}   ·   Late ${tally.late}   ·   Half-day ${tally.half_day}   ·   On leave ${tally.on_leave}   ·   Absent ${absent}   ·   Late ${lateMins} min   ·   Early-out ${earlyMins} min`,
+        M + 4, y + 10.2,
+      )
+
+      // ── Signatures ──
+      y += 30
+      if (y > ph - 24) { doc.addPage(); y = 40 }
+      doc.setDrawColor(150, 150, 150).setLineWidth(0.3)
+      doc.line(M, y, M + 55, y)
+      doc.line(pageW - M - 55, y, pageW - M, y)
+      doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...GRAY)
+      doc.text('Prepared by (HR)', M, y + 4.5)
+      doc.text('Principal / Manager', pageW - M - 55, y + 4.5)
+
       const nameSlug = emp.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-      a.href = url
-      a.download = `attendance-${emp.biometric_code !== '—' ? emp.biometric_code : nameSlug}-${month}.csv`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      doc.save(`attendance-${emp.biometric_code !== '—' ? emp.biometric_code : nameSlug}-${month}.pdf`)
     } catch (e) {
       console.error(e)
       setError(e.message || String(e))
@@ -320,9 +430,9 @@ export default function MonthlyReport() {
           ))}
         </select>
         <button
-          onClick={downloadEmployeeCsv}
+          onClick={downloadEmployeePdf}
           disabled={loading || !empId || empBusy}
-          title="Day-by-day attendance for the selected employee"
+          title="Branded day-by-day attendance PDF for the selected employee"
           style={{
             background: 'var(--white)', color: 'var(--green-dark)',
             border: '1px solid var(--green-dark)', borderRadius: 'var(--radius-sm)',
@@ -332,7 +442,7 @@ export default function MonthlyReport() {
             fontFamily: 'inherit',
           }}
         >
-          {empBusy ? 'Preparing…' : '↓ Employee CSV'}
+          {empBusy ? 'Preparing…' : '↓ Employee PDF'}
         </button>
 
         <button
