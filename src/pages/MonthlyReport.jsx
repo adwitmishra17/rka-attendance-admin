@@ -24,6 +24,11 @@ function prettyMonth(yyyyMm) {
   return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
 // Mon-Sat day count between two ISO dates [start, end). Excludes Sundays.
 // (Indian school 6-day work week.)
 function countWorkingDays(startIso, endIso) {
@@ -393,22 +398,38 @@ export default function MonthlyReport() {
         <label style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
           Month
         </label>
-        <input
-          type="month"
-          value={month}
-          onChange={e => setMonth(e.target.value)}
-          style={{
-            border: '1px solid var(--gray-200)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '6px 10px',
-            fontSize: 13,
-            fontFamily: 'inherit',
-            color: 'var(--text)',
-          }}
-        />
-        <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>
-          {prettyMonth(month)}
-        </span>
+        {/* Cross-browser month picker. <input type="month"> is NOT supported by
+            desktop Safari (renders a dead text box, silently locking the report
+            to the current month) — so explicit arrows + selects instead. */}
+        {(() => {
+          const [yy, mm] = month.split('-').map(Number)
+          const curYear = Number(todayInKolkata().slice(0, 4))
+          const years = []
+          for (let y = 2024; y <= curYear + 1; y++) years.push(y)
+          const setYm = (y, m) => setMonth(`${y}-${String(m).padStart(2, '0')}`)
+          const shift = (delta) => {
+            const d = new Date(yy, mm - 1 + delta, 1)
+            setYm(d.getFullYear(), d.getMonth() + 1)
+          }
+          const ctl = {
+            border: '1px solid var(--gray-200)', borderRadius: 'var(--radius-sm)',
+            padding: '6px 10px', fontSize: 13, fontFamily: 'inherit',
+            color: 'var(--text)', background: 'var(--white)',
+          }
+          const arrow = { ...ctl, cursor: 'pointer', fontWeight: 700, lineHeight: 1, padding: '6px 11px' }
+          return (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <button onClick={() => shift(-1)} style={arrow} title="Previous month">‹</button>
+              <select value={mm} onChange={e => setYm(yy, Number(e.target.value))} style={ctl}>
+                {MONTH_NAMES.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}
+              </select>
+              <select value={yy} onChange={e => setYm(Number(e.target.value), mm)} style={ctl}>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <button onClick={() => shift(1)} style={arrow} title="Next month">›</button>
+            </span>
+          )
+        })()}
         <div style={{ flex: 1 }} />
 
         {/* Per-employee day-by-day export */}
