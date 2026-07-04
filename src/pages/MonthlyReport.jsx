@@ -192,19 +192,20 @@ export default function MonthlyReport() {
   }
   const fmtT = (t) => (t ? String(t).slice(0, 5) : '')
 
-  // Downscale /crest.png to a small data-URL so the PDF stays light.
-  async function loadCrest(maxDim = 240) {
+  // Downscale a PNG to a data-URL (keeps transparency) + return its aspect
+  // ratio so it can be placed in the PDF without distortion or a box.
+  async function loadPng(src, maxDim) {
     try {
       const img = new Image()
-      img.src = '/crest.png'
+      img.src = src
       await img.decode()
       const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
       const c = document.createElement('canvas')
       c.width = Math.round(img.width * scale)
       c.height = Math.round(img.height * scale)
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
-      return c.toDataURL('image/png')
-    } catch { return null }  // no logo → PDF still generates
+      return { data: c.toDataURL('image/png'), w: c.width, h: c.height }
+    } catch { return null }  // asset missing → PDF still generates
   }
 
   async function downloadEmployeePdf() {
@@ -256,8 +257,11 @@ export default function MonthlyReport() {
       if (body.length === 0) throw new Error('No attendance days in this month yet.')
 
       // PDF libs are dynamically imported so the main bundle stays lean.
-      const [{ jsPDF }, autoTableMod, crest] = await Promise.all([
-        import('jspdf'), import('jspdf-autotable'), loadCrest(),
+      // banner-light.png = school wordmark in black+red on TRANSPARENT
+      // background (the white-text banner would vanish on white paper);
+      // PNG alpha is preserved so it merges with the page, no box.
+      const [{ jsPDF }, autoTableMod, crest, banner] = await Promise.all([
+        import('jspdf'), import('jspdf-autotable'), loadPng('/crest.png', 240), loadPng('/banner-light.png', 1000),
       ])
       const autoTable = autoTableMod.default
 
@@ -271,12 +275,21 @@ export default function MonthlyReport() {
       const doc = new jsPDF({ unit: 'mm', format: 'a4' })
       const pageW = doc.internal.pageSize.getWidth()
 
-      // ── Header: crest + school name + report meta ──
-      if (crest) doc.addImage(crest, 'PNG', M, 11, 21, 21)
-      doc.setFont('helvetica', 'bold').setFontSize(16).setTextColor(...GREEN)
-      doc.text('RADHAKRISHNA ACADEMY', M + 26, 19)
-      doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(...GRAY)
-      doc.text('Employee Attendance Report', M + 26, 25.5)
+      // ── Header: crest + school wordmark image + report meta ──
+      if (crest) doc.addImage(crest.data, 'PNG', M, 10.5, 21, 21)
+      if (banner) {
+        const bw = 76                                  // banner width in mm
+        const bh = bw * (banner.h / banner.w)          // keep natural aspect (~16.8mm)
+        doc.addImage(banner.data, 'PNG', M + 25, 11, bw, bh)
+        doc.setFont('helvetica', 'normal').setFontSize(9.5).setTextColor(...GRAY)
+        doc.text('Employee Attendance Report', M + 25, 11 + bh + 4.5)
+      } else {
+        // Fallback if the asset is missing — text header as before.
+        doc.setFont('helvetica', 'bold').setFontSize(16).setTextColor(...GREEN)
+        doc.text('RADHAKRISHNA ACADEMY', M + 26, 19)
+        doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(...GRAY)
+        doc.text('Employee Attendance Report', M + 26, 25.5)
+      }
       doc.setFont('helvetica', 'bold').setFontSize(11).setTextColor(40, 40, 40)
       doc.text(prettyMonth(month), pageW - M, 19, { align: 'right' })
       doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...GRAY)
