@@ -43,6 +43,9 @@ export default function MonthlyReport() {
   const [month, setMonth] = useState(todayInKolkata().slice(0, 7))
   const [rows, setRows] = useState([])
   const [stats, setStats] = useState({ workingDays: 0, holidays: 0, expected: 0 })
+  const [holidayDates, setHolidayDates] = useState([])   // ISO dates, for the per-employee day grid
+  const [empId, setEmpId] = useState('')                 // per-employee CSV picker
+  const [empBusy, setEmpBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -128,6 +131,7 @@ export default function MonthlyReport() {
         if (!cancelled) {
           setRows(result)
           setStats({ workingDays, holidays: holidayDateSet.size, expected })
+          setHolidayDates([...holidayDateSet])
           setLoading(false)
         }
       } catch (e) {
@@ -173,6 +177,81 @@ export default function MonthlyReport() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+  }
+
+  // Per-employee CSV — a day-by-day sheet for ONE employee (payroll / disputes),
+  // as opposed to the collective per-employee summary above.
+  const STATUS_LABEL = {
+    present: 'Present', late: 'Late', half_day: 'Half day',
+    on_leave: 'On leave', absent: 'Absent', not_marked: 'Not marked',
+  }
+  const fmtT = (t) => (t ? String(t).slice(0, 5) : '')
+
+  async function downloadEmployeeCsv() {
+    const emp = rows.find(r => r.id === empId)
+    if (!emp) return
+    setEmpBusy(true)
+    try {
+      const { start: monthStart, end: monthEnd } = monthBounds(month)
+      const { data: adRows, error: adErr } = await supabase
+        .from('attendance_daily')
+        .select('date, status, in_time, out_time, late_minutes, early_leave_minutes, notes')
+        .eq('employee_id', empId)
+        .gte('date', monthStart)
+        .lt('date', monthEnd)
+        .order('date', { ascending: true })
+      if (adErr) throw adErr
+
+      const byDate = new Map((adRows || []).map(r => [r.date, r]))
+      const holidaySet = new Set(holidayDates)
+      const today = todayInKolkata()
+
+      const escape = (v) => `"${(v == null ? '' : String(v)).replace(/"/g, '""')}"`
+      const lines = []
+      lines.push(['Employee', emp.name, 'Code', emp.biometric_code, 'Branch', emp.branch, 'Month', prettyMonth(month)].map(escape).join(','))
+      lines.push('')
+      lines.push(['Date', 'Day', 'Status', 'In', 'Out', 'Late mins', 'Early-out mins', 'Notes'].map(escape).join(','))
+
+      let present = 0, lateMins = 0, earlyMins = 0
+      // Walk every calendar day of the month, but stop at today (no future rows).
+      for (let d = new Date(monthStart + 'T00:00:00'); ; d.setDate(d.getDate() + 1)) {
+        const iso = d.toLocaleDateString('en-CA')
+        if (iso >= monthEnd || iso > today) break
+        const dow = d.getDay()
+        const dayName = d.toLocaleDateString('en-US', { weekday: 'long' })
+        const ad = byDate.get(iso)
+        let status
+        if (ad?.status) status = STATUS_LABEL[ad.status] || ad.status
+        else if (dow === 0) status = 'Sunday (weekly off)'
+        else if (holidaySet.has(iso)) status = 'Holiday'
+        else status = 'Absent (not marked)'
+        if (ad?.status === 'present') present++
+        lateMins += ad?.late_minutes || 0
+        earlyMins += ad?.early_leave_minutes || 0
+        lines.push([iso, dayName, status, fmtT(ad?.in_time), fmtT(ad?.out_time),
+          ad?.late_minutes || 0, ad?.early_leave_minutes || 0, ad?.notes || ''].map(escape).join(','))
+      }
+
+      lines.push('')
+      lines.push(['Totals', '', '', '', '', '', '', ''].map(escape).join(','))
+      lines.push(['Expected days', stats.expected, 'Present', present, 'Absent', Math.max(0, stats.expected - present), 'Late mins', lateMins].map(escape).join(','))
+
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const nameSlug = emp.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      a.href = url
+      a.download = `attendance-${emp.biometric_code !== '—' ? emp.biometric_code : nameSlug}-${month}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error(e)
+      setError(e.message || String(e))
+    } finally {
+      setEmpBusy(false)
+    }
   }
 
   const totalPresent = useMemo(() => rows.reduce((s, r) => s + r.present, 0), [rows])
@@ -221,6 +300,41 @@ export default function MonthlyReport() {
           {prettyMonth(month)}
         </span>
         <div style={{ flex: 1 }} />
+
+        {/* Per-employee day-by-day export */}
+        <select
+          value={empId}
+          onChange={e => setEmpId(e.target.value)}
+          disabled={loading || rows.length === 0}
+          style={{
+            border: '1px solid var(--gray-200)', borderRadius: 'var(--radius-sm)',
+            padding: '7px 10px', fontSize: 13, fontFamily: 'inherit',
+            color: 'var(--text)', maxWidth: 240, background: 'var(--white)',
+          }}
+        >
+          <option value="">Employee…</option>
+          {rows.map(r => (
+            <option key={r.id} value={r.id}>
+              {r.name}{r.biometric_code !== '—' ? ` (${r.biometric_code})` : ''}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={downloadEmployeeCsv}
+          disabled={loading || !empId || empBusy}
+          title="Day-by-day attendance for the selected employee"
+          style={{
+            background: 'var(--white)', color: 'var(--green-dark)',
+            border: '1px solid var(--green-dark)', borderRadius: 'var(--radius-sm)',
+            padding: '8px 16px', fontSize: 13, fontWeight: 500,
+            cursor: loading || !empId || empBusy ? 'not-allowed' : 'pointer',
+            opacity: loading || !empId || empBusy ? 0.5 : 1,
+            fontFamily: 'inherit',
+          }}
+        >
+          {empBusy ? 'Preparing…' : '↓ Employee CSV'}
+        </button>
+
         <button
           onClick={downloadCsv}
           disabled={loading || rows.length === 0}
@@ -233,7 +347,7 @@ export default function MonthlyReport() {
             fontFamily: 'inherit',
           }}
         >
-          ↓ Download CSV
+          ↓ All employees CSV
         </button>
       </div>
 
