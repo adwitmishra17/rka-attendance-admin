@@ -827,6 +827,26 @@ function EditMode({ form, errors, revealed, allEmployees, departments, reporting
           form={form}
           reportingTimeConfigs={reportingTimeConfigs}
         />
+        {/* Explicit clear — Safari's <input type="time"> can't be blanked once
+            set, so "leave empty for branch default" is unreachable there. */}
+        {(form.custom_in_time || form.custom_out_time || form.custom_grace_minutes != null) && (
+          <button
+            type="button"
+            onClick={() => {
+              onUpdate('custom_in_time', null)
+              onUpdate('custom_out_time', null)
+              onUpdate('custom_grace_minutes', null)
+            }}
+            style={{
+              margin: '0 0 12px', padding: '8px 14px',
+              background: 'var(--green-light, #eaf2ec)', color: 'var(--green-dark)',
+              border: '1px solid var(--green-muted, #c8dfd0)', borderRadius: 8,
+              fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            ✕ Clear custom timings — use branch default
+          </button>
+        )}
         <FormField
           label="In time"
           hint={timingHint(form, reportingTimeConfigs, 'in')}
