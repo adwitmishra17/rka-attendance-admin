@@ -51,6 +51,57 @@ export const BRANCHES = ['MAIN', 'CITY']
 export const MODULES = ['tracker', 'hrms', 'sms']
 export const DEFAULT_MODULES = ['tracker', 'hrms', 'sms']
 
+// Per-platform access LEVELS (the extended permissions model). A user's
+// moduleRoles map carries one level per platform (null = no access):
+//   tracker: admin
+//   hrms:    admin | receptionist (front desk, walk-ins only)
+//   sms:     super_admin (all branches) | admin (branch) | cashier (fees only)
+// Legacy fields (role + modules[]) are STILL WRITTEN, derived from this
+// map, so the Academic Tracker and older readers keep working unchanged.
+export const MODULE_ROLES = {
+  tracker: ['admin'],
+  hrms: ['admin', 'receptionist'],
+  sms: ['super_admin', 'admin', 'cashier'],
+}
+
+export function normaliseModuleRoles(input) {
+  const mr = {}
+  for (const mod of MODULES) {
+    const v = input?.[mod] ?? null
+    mr[mod] = v && MODULE_ROLES[mod].includes(v) ? v : null
+  }
+  if (!MODULES.some(m => mr[m])) throw new Error('Grant access to at least one platform')
+  return mr
+}
+
+/** Read per-platform levels off a doc, deriving from legacy fields when
+ *  the map is absent — existing admins keep their exact current access. */
+export function adminModuleRoles(adminDoc) {
+  if (!adminDoc) return { tracker: null, hrms: null, sms: null }
+  if (adminDoc.moduleRoles && typeof adminDoc.moduleRoles === 'object') {
+    const mr = {}
+    for (const mod of MODULES) {
+      const v = adminDoc.moduleRoles[mod] ?? null
+      mr[mod] = v && MODULE_ROLES[mod].includes(v) ? v : null
+    }
+    return mr
+  }
+  const mods = adminModules(adminDoc)
+  const legacyRole = adminDoc.role || 'admin'
+  return {
+    tracker: mods.includes('tracker') ? 'admin' : null,
+    hrms: mods.includes('hrms') ? (legacyRole === 'receptionist' ? 'receptionist' : 'admin') : null,
+    sms: mods.includes('sms') ? (legacyRole === 'super_admin' ? 'super_admin' : 'admin') : null,
+  }
+}
+
+// Derive the legacy (role, modules[]) pair a moduleRoles map represents.
+function legacyFromModuleRoles(mr) {
+  const modules = MODULES.filter(m => mr[m])
+  const role = (mr.hrms === 'receptionist' && !mr.tracker && !mr.sms) ? 'receptionist' : 'admin'
+  return { role, modules }
+}
+
 /**
  * Validate + normalise a branchCodes selection. Accepts either an array
  * (preferred) or a single string (legacy). Returns the cleaned array.
@@ -153,7 +204,7 @@ export async function listAdmins() {
  * - Phone-only admins → doc id is a random UUID (since the email-as-id
  *   convention can't apply when email is null).
  */
-export async function createAdmin({ email, phone, fullName, role, branchCode, branchCodes, modules, currentUser }) {
+export async function createAdmin({ email, phone, fullName, role, branchCode, branchCodes, modules, moduleRoles, currentUser }) {
   const e = (email || '').trim().toLowerCase()
   const n = (fullName || '').trim()
   const p = phone ? normalisePhone(phone) : null
@@ -164,10 +215,21 @@ export async function createAdmin({ email, phone, fullName, role, branchCode, br
   if (e && !e.includes('@')) throw new Error('Invalid email format')
   if (phone && !p) throw new Error('Invalid mobile number. Use a 10-digit Indian number.')
   if (e === SUPER_ADMIN_EMAIL) throw new Error('This email is already the super admin')
-  if (!ROLES.includes(role)) throw new Error('Pick a role')
   if (!currentUser?.uid) throw new Error('Not signed in')
 
-  const cleanModules = normaliseModules(role, modules)
+  // New model: per-platform levels. Legacy (role, modules) derived.
+  let mr = null
+  let cleanModules
+  if (moduleRoles) {
+    mr = normaliseModuleRoles(moduleRoles)
+    if (mr.sms === 'cashier' && branches.length !== 1) {
+      throw new Error('A cashier is scoped to exactly one branch — pick a single branch')
+    }
+    ;({ role, modules: cleanModules } = legacyFromModuleRoles(mr))
+  } else {
+    if (!ROLES.includes(role)) throw new Error('Pick a role')
+    cleanModules = normaliseModules(role, modules)
+  }
 
   // Choose doc id. Email-keyed wins when present (preserves existing convention).
   const id = e || `phone_${(crypto.randomUUID?.() || Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 24)}`
@@ -189,6 +251,7 @@ export async function createAdmin({ email, phone, fullName, role, branchCode, br
     phone: p,
     fullName: n,
     role,
+    ...(mr ? { moduleRoles: mr } : {}),
     // Write both `branchCodes` (new, canonical) AND `branchCode` (the first one)
     // so legacy reads — including the tracker's existing code — keep working
     // until they migrate to the array form.
@@ -222,7 +285,7 @@ async function findAdminIdByPhone(phoneE164) {
  * fixed (it's the document key). Pass only the fields that should change;
  * others are left alone.
  */
-export async function updateAdmin({ id, fullName, role, branchCode, branchCodes, modules, phone, email, currentUser }) {
+export async function updateAdmin({ id, fullName, role, branchCode, branchCodes, modules, moduleRoles, phone, email, currentUser }) {
   if (!id) throw new Error('Admin id is required')
   if (id === SUPER_ADMIN_EMAIL) throw new Error('Super admin cannot be modified')
   if (role && !ROLES.includes(role)) throw new Error('Pick a role')
@@ -232,6 +295,20 @@ export async function updateAdmin({ id, fullName, role, branchCode, branchCodes,
     updatedById: currentUser.uid,
     updatedByName: currentUser.displayName || currentUser.email,
     updatedAt: Timestamp.now(),
+  }
+
+  // New model: per-platform levels; legacy role/modules derived from it.
+  if (moduleRoles) {
+    const mr = normaliseModuleRoles(moduleRoles)
+    const effBranches = normaliseBranches(branchCodes ?? branchCode ?? 'MAIN')
+    if (mr.sms === 'cashier' && effBranches.length !== 1) {
+      throw new Error('A cashier is scoped to exactly one branch — pick a single branch')
+    }
+    const legacy = legacyFromModuleRoles(mr)
+    updates.moduleRoles = mr
+    updates.role = legacy.role
+    updates.modules = legacy.modules
+    role = undefined; modules = undefined
   }
   if (fullName != null) {
     const trimmed = fullName.trim()

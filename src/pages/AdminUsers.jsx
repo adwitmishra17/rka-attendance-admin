@@ -8,6 +8,7 @@ import {
   setAdminActive,
   deleteAdmin,
   adminModules,
+  adminModuleRoles,
   adminBranches,
   DEFAULT_MODULES,
 } from '../lib/admins'
@@ -37,6 +38,29 @@ const BRANCHES = [
   { value: 'MAIN', label: 'Main Campus', desc: 'Sawarubandh / Akhar' },
   { value: 'CITY', label: 'City Branch', desc: 'Japlinganj' },
 ]
+const LEVELS = {
+  tracker: [
+    { value: '',      label: 'No access' },
+    { value: 'admin', label: 'Admin — full Tracker access' },
+  ],
+  hrms: [
+    { value: '',             label: 'No access' },
+    { value: 'admin',        label: 'Admin — full HRMS access' },
+    { value: 'receptionist', label: 'Front desk — walk-ins only' },
+  ],
+  sms: [
+    { value: '',            label: 'No access' },
+    { value: 'super_admin', label: 'Super admin — all branches' },
+    { value: 'admin',       label: 'Branch admin — full SMS, own branch' },
+    { value: 'cashier',     label: 'Cashier — fees, students & reports only' },
+  ],
+}
+const LEVEL_BADGE = {
+  admin: 'Admin', receptionist: 'Front desk',
+  super_admin: 'Super', cashier: 'Cashier',
+}
+const DEFAULT_MODULE_ROLES = { tracker: 'admin', hrms: 'admin', sms: 'admin' }
+
 const MODULE_INFO = [
   { value: 'tracker', label: 'Academic Tracker', desc: 'Lessons, tests, syllabus' },
   { value: 'hrms',    label: 'HRMS Portal',      desc: 'Employees, attendance, walk-ins' },
@@ -56,9 +80,8 @@ export default function AdminUsers() {
   const [newEmail, setNewEmail] = useState('')
   const [newPhone, setNewPhone] = useState('')
   const [newName, setNewName] = useState('')
-  const [newRole, setNewRole] = useState('admin')
   const [newBranches, setNewBranches] = useState(['MAIN'])
-  const [newModules, setNewModules] = useState([...DEFAULT_MODULES])
+  const [newModuleRoles, setNewModuleRoles] = useState({ ...DEFAULT_MODULE_ROLES })
   const [submitting, setSubmitting] = useState(false)
   const [addError, setAddError] = useState('')
 
@@ -67,9 +90,8 @@ export default function AdminUsers() {
   const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [editPhone, setEditPhone] = useState('')
-  const [editRole, setEditRole] = useState('admin')
   const [editBranches, setEditBranches] = useState(['MAIN'])
-  const [editModules, setEditModules] = useState([...DEFAULT_MODULES])
+  const [editModuleRoles, setEditModuleRoles] = useState({ ...DEFAULT_MODULE_ROLES })
   const [editSubmitting, setEditSubmitting] = useState(false)
   const [editError, setEditError] = useState('')
 
@@ -91,9 +113,9 @@ export default function AdminUsers() {
   }
 
   function openAdd() {
-    setNewEmail(''); setNewPhone(''); setNewName(''); setNewRole('admin')
+    setNewEmail(''); setNewPhone(''); setNewName('')
     setNewBranches(['MAIN'])
-    setNewModules([...DEFAULT_MODULES])
+    setNewModuleRoles({ ...DEFAULT_MODULE_ROLES })
     setAddError('')
     setShowAdd(true)
   }
@@ -106,9 +128,8 @@ export default function AdminUsers() {
         email: newEmail,
         phone: newPhone,
         fullName: newName,
-        role: newRole,
         branchCodes: newBranches,
-        modules: newRole === 'receptionist' ? ['hrms'] : newModules,
+        moduleRoles: newModuleRoles,
         currentUser: user,
       })
       toast.show('Admin added')
@@ -126,11 +147,11 @@ export default function AdminUsers() {
     setEditEmail(a.email || '')
     // Pre-fill phone from either lowercase `phone` (preferred) or legacy `Phone`.
     setEditPhone(a.phone || a.Phone || '')
-    setEditRole(ROLES.find(r => r.value === a.role) ? a.role : 'admin')
     // Pre-fill branches from new array form or fallback to legacy singular field.
     const existingBranches = adminBranches(a)
     setEditBranches(existingBranches.length > 0 ? existingBranches : ['MAIN'])
-    setEditModules(adminModules(a))
+    const mr = adminModuleRoles(a)
+    setEditModuleRoles({ tracker: mr.tracker || '', hrms: mr.hrms || '', sms: mr.sms || '' })
     setEditError('')
   }
 
@@ -146,9 +167,8 @@ export default function AdminUsers() {
         // email-keyed admins the email IS the doc id, so it can't change here.
         email: editing.email ? undefined : editEmail,
         phone: editPhone,    // empty string clears phone (if email is present)
-        role: editRole,
+        moduleRoles: editModuleRoles,
         branchCodes: editBranches,
-        modules: editRole === 'receptionist' ? ['hrms'] : editModules,
         currentUser: user,
       })
       toast.show('Admin updated')
@@ -393,14 +413,11 @@ export default function AdminUsers() {
               style={inp}
             />
           </Field>
-          <Field label="Role">
-            <RoleRadios value={newRole} onChange={setNewRole} disabled={submitting} />
+          <Field label="Platform access">
+            <PlatformAccessPicker value={newModuleRoles} onChange={setNewModuleRoles} disabled={submitting} />
           </Field>
           <Field label="Branches">
             <BranchChecks value={newBranches} onChange={setNewBranches} disabled={submitting} />
-          </Field>
-          <Field label="Apps">
-            <ModulesPicker value={newModules} onChange={setNewModules} role={newRole} disabled={submitting} />
           </Field>
           {addError && <div style={errBox}>{addError}</div>}
           <button
@@ -462,19 +479,11 @@ export default function AdminUsers() {
                 : 'Required for this phone-only admin.'}
             </p>
           </Field>
-          <Field label="Role">
-            <RoleRadios value={editRole} onChange={setEditRole} disabled={editSubmitting} />
-            {editing.role === 'super_admin' && (
-              <p style={{ fontSize: 11, color: 'var(--crimson)', marginTop: 6 }}>
-                This admin has the legacy <strong>super_admin</strong> role. Saving will convert them to a branch-scoped role. (The hardcoded super admin is unaffected.)
-              </p>
-            )}
+          <Field label="Platform access">
+            <PlatformAccessPicker value={editModuleRoles} onChange={setEditModuleRoles} disabled={editSubmitting} />
           </Field>
           <Field label="Branches">
             <BranchChecks value={editBranches} onChange={setEditBranches} disabled={editSubmitting} />
-          </Field>
-          <Field label="Apps">
-            <ModulesPicker value={editModules} onChange={setEditModules} role={editRole} disabled={editSubmitting} />
           </Field>
           {editError && <div style={errBox}>{editError}</div>}
           <button
@@ -536,28 +545,6 @@ function Field({ label, required, children }) {
   )
 }
 
-function RoleRadios({ value, onChange, disabled }) {
-  return (
-    <div style={{ display: 'flex', gap: 10 }}>
-      {ROLES.map(r => (
-        <label key={r.value} style={radioCard(value === r.value, disabled)}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="radio" name="role-radio" value={r.value}
-              checked={value === r.value}
-              onChange={() => onChange(r.value)}
-              disabled={disabled}
-            />
-            <span style={{ fontSize: 13, fontWeight: 600, color: value === r.value ? 'var(--green-dark)' : 'var(--text)' }}>
-              {r.label}
-            </span>
-          </div>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 22 }}>{r.desc}</span>
-        </label>
-      ))}
-    </div>
-  )
-}
 
 function BranchChecks({ value, onChange, disabled }) {
   const set = new Set(value || [])
@@ -619,58 +606,33 @@ function RoleBadge({ role }) {
  * read-only with a helper message in that case so the user understands
  * why they can't pick.
  */
-function ModulesPicker({ value, onChange, role, disabled }) {
-  const lockedToHrms = role === 'receptionist'
-  const effective = lockedToHrms ? ['hrms'] : value
-
-  function toggle(mod) {
-    if (lockedToHrms || disabled) return
-    const has = effective.includes(mod)
-    let next
-    if (has) {
-      next = effective.filter(m => m !== mod)
-      if (next.length === 0) return  // must keep at least one
-    } else {
-      next = [...effective, mod]
-    }
-    onChange(next)
-  }
-
+function PlatformAccessPicker({ value, onChange, disabled }) {
+  // One row per platform: name + level select. '' = no access.
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 10 }}>
-        {MODULE_INFO.map(m => {
-          const checked = effective.includes(m.value)
-          const cardDisabled = lockedToHrms || disabled
-          return (
-            <label
-              key={m.value}
-              style={{
-                ...radioCard(checked, cardDisabled),
-                cursor: cardDisabled ? 'not-allowed' : 'pointer',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggle(m.value)}
-                  disabled={cardDisabled}
-                />
-                <span style={{ fontSize: 13, fontWeight: 600, color: checked ? 'var(--green-dark)' : 'var(--text)' }}>
-                  {m.label}
-                </span>
-              </div>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 22 }}>{m.desc}</span>
-            </label>
-          )
-        })}
-      </div>
-      {lockedToHrms && (
-        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-          Front-desk staff are always limited to HRMS only.
-        </p>
-      )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {MODULE_INFO.map(m => (
+        <div key={m.value} style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+          border: '1px solid var(--gray-100)', borderRadius: 8, background: 'var(--white)',
+        }}>
+          <div style={{ width: 150 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{m.label}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m.desc}</div>
+          </div>
+          <select
+            value={value[m.value] || ''}
+            disabled={disabled}
+            onChange={e => onChange({ ...value, [m.value]: e.target.value || '' })}
+            style={{ flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--gray-200)', fontSize: 13, background: 'var(--white)' }}
+          >
+            {LEVELS[m.value].map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+          </select>
+        </div>
+      ))}
+      <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>
+        Grant at least one platform. SMS cashier and branch admin are scoped to the
+        selected branch; SMS super admin sees every branch.
+      </p>
     </div>
   )
 }
@@ -679,22 +641,17 @@ function ModulesPicker({ value, onChange, role, disabled }) {
  * Compact chip pair shown under the role badge in the table.
  */
 function ModuleChips({ admin }) {
-  const mods = adminModules(admin)
-  if (mods.length === 0) return null
-  if (mods.length === MODULE_INFO.length) {
-    return (
-      <span style={modChip('var(--green-light)', 'var(--green-dark)')}>
-        All apps
-      </span>
-    )
-  }
+  const mr = adminModuleRoles(admin)
+  const granted = MODULE_INFO.filter(m => mr[m.value])
+  if (granted.length === 0) return null
   return (
     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-      {mods.map(m => {
-        const info = MODULE_INFO.find(x => x.value === m)
+      {granted.map(m => {
+        const level = mr[m.value]
+        const short = m.label.replace(' Portal', '').replace('Academic ', '').replace('Student Mgmt', 'SMS')
         return (
-          <span key={m} style={modChip('var(--gray-50)', 'var(--text)')}>
-            {info ? info.label.replace(' Portal', '').replace('Academic ', '') : m}
+          <span key={m.value} style={modChip(level === 'super_admin' ? 'var(--green-light)' : 'var(--gray-50)', level === 'super_admin' ? 'var(--green-dark)' : 'var(--text)')}>
+            {short}: {LEVEL_BADGE[level] || level}
           </span>
         )
       })}

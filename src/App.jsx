@@ -83,11 +83,15 @@ export default function App() {
           return
         }
 
-        // Module gate: this is the HRMS app, so 'hrms' must be in the
-        // admin's allowed modules. Legacy docs missing the field default
-        // to both modules (handled by adminModules helper).
-        const mods = adminModules(data)
-        if (!mods.includes('hrms')) {
+        // Module gate — per-platform LEVELS (moduleRoles.hrms) with legacy
+        // modules[]/role fallback for docs written before levels existed.
+        const mrDoc = data.moduleRoles && typeof data.moduleRoles === 'object' ? data.moduleRoles : null
+        const hrmsLevel = mrDoc
+          ? (mrDoc.hrms || null)
+          : (adminModules(data).includes('hrms')
+              ? (data.role === 'receptionist' ? 'receptionist' : 'admin')
+              : null)
+        if (!hrmsLevel) {
           setAuthError('You don\'t have access to the HRMS portal. Contact Adwit Mishra.')
           await signOut(auth)
           setAuthLoading(false)
@@ -103,7 +107,7 @@ export default function App() {
         }
 
         setUser(u)
-        setAdminRole(data.role || 'admin')
+        setAdminRole(hrmsLevel)
         setAllowedBranches(allowed)
         setCurrentBranchState(resolveBranch(readStoredBranch(), allowed))
         setAuthLoading(false)
