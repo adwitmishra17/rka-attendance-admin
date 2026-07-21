@@ -68,8 +68,15 @@ export default function App() {
       }
 
       try {
-        const adminDoc = await getDoc(doc(db, 'admins', email))
-        if (!adminDoc.exists()) {
+        // Email sessions (Google or OTP-resolved) → admins/{email}.
+        // Phone-only admins sign in via custom token whose UID *is* their
+        // admins docId (verify-otp), so email-less sessions → admins/{uid}.
+        let adminDoc = email ? await getDoc(doc(db, 'admins', email)) : null
+        if (!adminDoc?.exists() && u.uid) {
+          const byUid = await getDoc(doc(db, 'admins', u.uid))
+          if (byUid.exists()) adminDoc = byUid
+        }
+        if (!adminDoc?.exists()) {
           setAuthError('You are not authorised to access the admin portal. Contact Adwit Mishra.')
           await signOut(auth)
           setAuthLoading(false)

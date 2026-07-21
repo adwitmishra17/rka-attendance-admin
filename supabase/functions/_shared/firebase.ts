@@ -1,16 +1,21 @@
 // Firebase Admin helpers implemented with raw JWTs (via `jose`) so they run
 // cleanly on Deno without the heavy `firebase-admin` npm package.
 //
-// Two operations are needed:
-//   1. getUidByEmail() — resolve a Firebase UID from an email (admin lookup).
-//   2. mintCustomToken() — issue a custom token the client signs in with.
+// Operations:
+//   1. getUidByEmail()      — resolve a Firebase UID from an email.
+//   2. createUserWithEmail()— admin-create a Firebase user for an email
+//                             (staff/admins who never did a Google sign-in).
+//   3. mintCustomToken()    — issue a custom token the client signs in with.
+//   4. getGoogleAccessToken(scope) — SA-signed OAuth token; also used with
+//                             the datastore scope to read the Firestore
+//                             `admins` directory (phone-only admin login).
 //
-// Both use the Firebase service account key. Store its three fields as
-// Supabase secrets: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY.
+// Service-account fields live as Supabase secrets:
+//   FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
 
 import { importPKCS8, SignJWT } from "npm:jose@5";
 
-const PROJECT_ID = Deno.env.get("FIREBASE_PROJECT_ID") ?? "";
+export const PROJECT_ID = Deno.env.get("FIREBASE_PROJECT_ID") ?? "";
 const CLIENT_EMAIL = Deno.env.get("FIREBASE_CLIENT_EMAIL") ?? "";
 // The private key in the service-account JSON contains literal "\n" sequences
 // when pasted into an env var — convert them back to real newlines.
@@ -31,18 +36,13 @@ async function privateKey() {
   return await importPKCS8(PRIVATE_KEY, "RS256");
 }
 
-/**
- * Exchange a signed service-account JWT for a Google OAuth2 access token.
- * Used to authorise the admin Identity Toolkit lookup call.
- */
-async function getAccessToken(): Promise<string> {
+/** Exchange a signed service-account JWT for a Google OAuth2 access token. */
+export async function getGoogleAccessToken(
+  scope = "https://www.googleapis.com/auth/identitytoolkit",
+): Promise<string> {
   const key = await privateKey();
   const now = Math.floor(Date.now() / 1000);
-  const assertion = await new SignJWT({
-    // If the lookup ever returns 403, broaden this to
-    // "https://www.googleapis.com/auth/cloud-platform".
-    scope: "https://www.googleapis.com/auth/identitytoolkit",
-  })
+  const assertion = await new SignJWT({ scope })
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
     .setIssuer(CLIENT_EMAIL)
     .setSubject(CLIENT_EMAIL)
@@ -68,7 +68,7 @@ async function getAccessToken(): Promise<string> {
 
 /** Resolve a Firebase Auth UID from an email address. Returns null if none. */
 export async function getUidByEmail(email: string): Promise<string | null> {
-  const token = await getAccessToken();
+  const token = await getGoogleAccessToken();
   const res = await fetch(
     `https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accounts:lookup`,
     {
@@ -85,6 +85,32 @@ export async function getUidByEmail(email: string): Promise<string | null> {
   }
   const data = await res.json();
   return data.users?.[0]?.localId ?? null;
+}
+
+/**
+ * Admin-create a Firebase Auth user for an email (no password — they sign in
+ * via custom token / Google). Lets OTP work for staff and admins who have
+ * never done a Google sign-in. Returns the new UID.
+ */
+export async function createUserWithEmail(email: string): Promise<string> {
+  const token = await getGoogleAccessToken();
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accounts`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, emailVerified: false }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`accounts create failed: ${await res.text()}`);
+  }
+  const data = await res.json();
+  if (!data.localId) throw new Error("accounts create returned no localId");
+  return data.localId as string;
 }
 
 /** Mint a Firebase custom token for a UID. The client calls signInWithCustomToken(). */

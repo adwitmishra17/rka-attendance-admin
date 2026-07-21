@@ -1,14 +1,27 @@
-// POST /functions/v1/request-otp   body: { "phone": "<as stored in employees>" }
+// POST /functions/v1/request-otp   body: { "phone": "<any Indian mobile form>" }
 //
-// Validates the number belongs to a staff member (or the super admin),
-// rate-limits, generates a 6-digit OTP, stores its hash, and sends the SMS
-// through bulksmsindia using the DLT-registered template.
+// Validates that the number belongs to the super admin, a Firestore
+// `admins` doc (phone-only admins — SMS auth-sync pattern), or an active
+// HRMS employee; rate-limits; generates a 6-digit OTP; stores its hash;
+// sends the SMS through bulksmsindia using the DLT-registered template.
 //
-// Deploy with verify_jwt = false — callers are not yet authenticated.
+// Phone matching is format-proof (last 10 digits), so "+91XXXXXXXXXX"
+// and bare "XXXXXXXXXX" both work regardless of how the record stores it.
+//
+// { "phone": "...", "dryRun": true } answers ONLY the authorization
+// question ({ authorized, via }) — no OTP is generated, stored, or sent.
+// Used for wiring verification; leaks nothing the normal 404 doesn't.
+//
+// Deploy with --no-verify-jwt — callers are not yet authenticated.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { json } from "../_shared/cors.ts";
 import { generateOtp, hashOtp, toSmsNumber } from "../_shared/otp.ts";
+import {
+  findAdminByPhone,
+  findEmployeeByPhone,
+  phoneForms,
+} from "../_shared/identity.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -27,9 +40,23 @@ const COOLDOWN_SEC = 60; // minimum gap between two OTPs to the same number
 const MAX_SENDS_PER_HOUR = 3;
 
 // --- DLT-registered template. Must match the registration character-for-character.
-// {#numeric#} is the only variable; everything else is fixed.
 function buildMessage(otp: string): string {
   return `Hi! Your one-time login OTP is ${otp}, valid for 10 minutes. Do not share with anyone. RKACAD`;
+}
+
+// Which directory authorises this phone? null = nobody.
+async function authorize(
+  canonical: string,
+  last10: string,
+): Promise<"superadmin" | "admins" | "employees" | null> {
+  if (SUPERADMIN_PHONE && phoneForms(SUPERADMIN_PHONE)?.last10 === last10) {
+    return "superadmin";
+  }
+  const admin = await findAdminByPhone(canonical);
+  if (admin?.isActive) return "admins";
+  const emp = await findEmployeeByPhone(supabase, last10);
+  if (emp) return "employees";
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -42,39 +69,36 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { phone } = await req.json().catch(() => ({}));
+    const { phone, dryRun } = await req.json().catch(() => ({}));
     if (!phone || typeof phone !== "string") {
       return json({ error: "Phone number is required." }, 400, origin);
     }
+    const forms = phoneForms(phone);
+    if (!forms) {
+      return json({ error: "Enter a valid 10-digit mobile number." }, 400, origin);
+    }
+    const { canonical, last10 } = forms;
 
-    // 1. Confirm the number belongs to a staff member (or the super admin).
-    const isSuperAdmin = SUPERADMIN_PHONE !== "" && phone === SUPERADMIN_PHONE;
-    if (!isSuperAdmin) {
-      const { data: emp, error: empErr } = await supabase
-        .from("employees") //  <-- CONFIRM table name
-        .select("email")
-        .eq("mobile", phone) //  <-- CONFIRM phone column name
-        .maybeSingle();
-      if (empErr) throw empErr;
-      if (!emp?.email) {
-        return json(
-          {
-            error:
-              "This mobile number isn't on file. Please use Google sign-in.",
-          },
-          404,
-          origin,
-        );
-      }
+    // 1. Confirm the number belongs to someone we know.
+    const via = await authorize(canonical, last10);
+    if (dryRun === true) {
+      return json({ ok: true, dry_run: true, authorized: via !== null, via }, 200, origin);
+    }
+    if (!via) {
+      return json(
+        { error: "This mobile number isn't on file. Please use Google sign-in." },
+        404,
+        origin,
+      );
     }
 
     const now = new Date();
 
-    // 2. Rate limiting (per phone): rolling 1-hour window + send cooldown.
+    // 2. Rate limiting (per canonical phone): rolling 1-hour window + cooldown.
     const { data: existing } = await supabase
       .from("otp_requests")
       .select("send_count, window_start, last_sent_at")
-      .eq("phone", phone)
+      .eq("phone", canonical)
       .maybeSingle();
 
     let sendCount = 0;
@@ -114,7 +138,7 @@ Deno.serve(async (req) => {
 
     const { error: upsertErr } = await supabase.from("otp_requests").upsert(
       {
-        phone,
+        phone: canonical,
         otp_hash: otpHash,
         expires_at: expiresAt.toISOString(),
         attempts: 0,
@@ -137,7 +161,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           apikey: BULKSMS_API_KEY,
           senderid: BULKSMS_SENDER_ID,
-          number: toSmsNumber(phone),
+          number: toSmsNumber(canonical),
           message: buildMessage(otp),
           peid: BULKSMS_PEID,
           templateid: BULKSMS_TEMPLATE_ID,
@@ -151,7 +175,7 @@ Deno.serve(async (req) => {
       // Roll back the stored OTP so the user can retry cleanly.
       await supabase.from("otp_requests").update({ otp_hash: null }).eq(
         "phone",
-        phone,
+        canonical,
       );
       console.error("bulksms send failed:", smsJson);
       return json(

@@ -1,16 +1,19 @@
 // Shared CORS headers for the OTP edge functions.
-// Add/adjust the HRMS domain below to match your actual deployment.
-const ALLOWED_ORIGINS = [
-  "https://tracker.rkacademyballia.in",
-  "https://teacher.rkacademyballia.in",
-  "https://hrms.rkacademyballia.in", // <-- CONFIRM/EDIT: actual HRMS domain
-  "http://localhost:5173",
-  "http://localhost:3000",
+// Reflects the caller's origin when it belongs to a school surface:
+// any *.rkacademyballia.in host, Vercel preview/prod deployments of the
+// admin apps, and local dev servers.
+const ORIGIN_PATTERNS = [
+  /^https:\/\/([a-z0-9-]+\.)*rkacademyballia\.in$/,
+  /^https:\/\/[a-z0-9-]+\.vercel\.app$/,
+  /^http:\/\/localhost:\d+$/,
+  /^http:\/\/127\.0\.0\.1:\d+$/,
 ];
+const FALLBACK_ORIGIN = "https://hrms.rkacademyballia.in";
 
 export function corsHeaders(origin: string | null): Record<string, string> {
-  const allowed =
-    origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const allowed = origin && ORIGIN_PATTERNS.some((re) => re.test(origin))
+    ? origin
+    : FALLBACK_ORIGIN;
   return {
     "Access-Control-Allow-Origin": allowed,
     "Access-Control-Allow-Headers":
