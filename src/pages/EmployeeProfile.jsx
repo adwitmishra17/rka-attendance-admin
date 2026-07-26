@@ -10,7 +10,7 @@ import { listDepartments } from '../lib/departments'
 import { applyBranchFilterArray, isAccessibleArray } from '../lib/branchQuery'
 import { BRANCHES, branchLabel } from '../lib/branch'
 import DocumentsTab from '../components/DocumentsTab'
-import TransferBanner from '../components/TransferBanner'
+import { useTransfer } from '../components/TransferBanner'
 import EmployeeAttendance from './EmployeeAttendance'
 import EmployeeFleetTab from '../components/EmployeeFleetTab'
 
@@ -48,6 +48,7 @@ export default function EmployeeProfile() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
+  const transfer = useTransfer(employee)
 
   // Departments (Phase 4.5)
   const [departments, setDepartments] = useState([])
@@ -326,9 +327,11 @@ export default function EmployeeProfile() {
         onEdit={enterEdit}
         onCancel={cancelEdit}
         onSave={saveChanges}
+        transferAction={transfer.button}
       />
 
-      {!isEditing && employee && <TransferBanner employee={employee} />}
+      {!isEditing && transfer.banner}
+      {transfer.modal}
 
       {/* Tabs (hidden in edit mode for focus) */}
       {!isEditing && (
@@ -411,7 +414,7 @@ export default function EmployeeProfile() {
 // ============================================================================
 // HEADER
 // ============================================================================
-function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInputRef, onPhotoSelected, departments, onEdit, onCancel, onSave }) {
+function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInputRef, onPhotoSelected, departments, onEdit, onCancel, onSave, transferAction }) {
   // Resolve department name from FK if present, else fall back to legacy text field
   const departmentName = employee.department_id
     ? (departments?.find(d => d.id === employee.department_id)?.name || null)
@@ -570,8 +573,9 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
         )}
       </div>
 
-      {/* Actions */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      {/* Actions — stacked; transfer request sits under Edit profile */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
         {!isEditing ? (
           <button onClick={onEdit} style={btnPrimary}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
@@ -588,6 +592,8 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
             </button>
           </>
         )}
+        </div>
+        {!isEditing && transferAction}
       </div>
     </div>
   )
