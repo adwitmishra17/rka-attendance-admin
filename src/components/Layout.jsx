@@ -24,6 +24,13 @@ const NAV = [
       </svg>
   },
   {
+    to: '/transfers', label: 'Transfers', icon:
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M8 3 4 7l4 4" /><path d="M4 7h16" />
+        <path d="m16 21 4-4-4-4" /><path d="M20 17H4" />
+      </svg>
+  },
+  {
     to: '/attendance', label: 'Attendance', icon:
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
         <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />

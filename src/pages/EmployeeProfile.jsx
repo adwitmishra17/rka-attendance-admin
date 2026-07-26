@@ -10,6 +10,7 @@ import { listDepartments } from '../lib/departments'
 import { applyBranchFilterArray, isAccessibleArray } from '../lib/branchQuery'
 import { BRANCHES, branchLabel } from '../lib/branch'
 import DocumentsTab from '../components/DocumentsTab'
+import TransferBanner from '../components/TransferBanner'
 import EmployeeAttendance from './EmployeeAttendance'
 import EmployeeFleetTab from '../components/EmployeeFleetTab'
 
@@ -326,6 +327,8 @@ export default function EmployeeProfile() {
         onCancel={cancelEdit}
         onSave={saveChanges}
       />
+
+      {!isEditing && employee && <TransferBanner employee={employee} />}
 
       {/* Tabs (hidden in edit mode for focus) */}
       {!isEditing && (
