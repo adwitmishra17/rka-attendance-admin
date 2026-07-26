@@ -158,14 +158,14 @@ export default function Layout() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div onClick={() => navigate('/')} style={{
         padding: '24px 16px 18px',
-        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        borderBottom: '1px solid var(--gray-100)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         gap: 8,
         cursor: 'pointer',
       }}>
-        <img src="/banner.png" alt="Radhakrishna Academy" style={{
+        <img src={dark ? "/banner.png" : "/banner-light.png"} alt="Radhakrishna Academy" style={{
           width: '100%',
           maxWidth: 184,
           height: 'auto',
@@ -173,7 +173,7 @@ export default function Layout() {
         }} />
         <div style={{
           fontSize: 8,
-          color: 'rgba(255,255,255,0.4)',
+          color: 'var(--text-muted)',
           letterSpacing: '0.18em',
           textTransform: 'uppercase',
           fontWeight: 500,
@@ -186,11 +186,12 @@ export default function Layout() {
       <nav style={{ flex: 1, padding: '10px 0', overflowY: 'auto' }}>
         {visibleNav.map(n => (
           <NavLink key={n.to} to={n.to} end={n.end} style={({ isActive }) => ({
-            display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px',
-            color: isActive ? 'var(--gold)' : 'rgba(255,255,255,0.65)',
-            textDecoration: 'none', fontSize: 13, fontWeight: 500,
-            background: isActive ? 'rgba(201,162,39,0.1)' : 'transparent',
-            borderLeft: isActive ? '2px solid var(--gold)' : '2px solid transparent',
+            display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+            margin: '1px 10px',
+            color: isActive ? 'var(--white)' : 'var(--text-muted)',
+            textDecoration: 'none', fontSize: 13, fontWeight: isActive ? 600 : 500,
+            background: isActive ? 'var(--text)' : 'transparent',
+            borderRadius: 99,
             transition: 'all 0.15s', whiteSpace: 'nowrap',
           })}>
             <span style={{ flexShrink: 0 }}>{n.icon}</span>
@@ -199,25 +200,25 @@ export default function Layout() {
         ))}
       </nav>
 
-      <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', padding: '12px 16px' }}>
+      <div style={{ borderTop: '1px solid var(--gray-100)', padding: '12px 16px' }}>
         {/* Branch indicator — informational, visible on both desktop and mobile */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 6,
           padding: '6px 9px',
           marginBottom: 10,
-          background: 'rgba(201,162,39,0.08)',
-          border: '1px solid rgba(201,162,39,0.15)',
-          borderRadius: 6,
+          background: 'var(--green-light)',
+          border: '1px solid var(--green-muted)',
+          borderRadius: 8,
           fontSize: 10,
-          color: 'rgba(255,255,255,0.65)',
+          color: 'var(--text-muted)',
         }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(201,162,39,0.85)" strokeWidth="2.2">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.2">
             <path d="M3 21v-7l9-7 9 7v7" />
             <path d="M9 21v-9h6v9" />
           </svg>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <span style={{ color: 'rgba(255,255,255,0.4)' }}>Viewing: </span>
-            <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>{sidebarBranchLabel}</span>
+            <span style={{ color: 'var(--text-muted)' }}>Viewing: </span>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>{sidebarBranchLabel}</span>
           </span>
         </div>
 
@@ -225,27 +226,27 @@ export default function Layout() {
           <div style={{
             width: 30, height: 30,
             borderRadius: '50%',
-            border: '1px solid rgba(201,162,39,0.4)',
-            background: 'linear-gradient(135deg, var(--gold), var(--crimson))',
+            border: '1px solid var(--green-muted)',
+            background: 'linear-gradient(135deg, var(--green), var(--house-blue))',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontSize: 11, fontWeight: 600,
             flexShrink: 0,
           }}>{initials}</div>
           <div style={{ overflow: 'hidden', flex: 1 }}>
-            <div style={{ fontSize: 12, color: 'white', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {user?.displayName || 'Admin'}
               {isSuperAdmin && <span style={{ marginLeft: 6, fontSize: 9, color: 'var(--gold)' }}>★</span>}
             </div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email}</div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email}</div>
           </div>
         </div>
         <button onClick={handleLogout} style={{
           width: '100%',
-          background: 'rgba(139,26,26,0.2)',
+          background: 'var(--crimson-light)',
           border: 'none',
-          borderRadius: 6,
+          borderRadius: 99,
           padding: '7px',
-          color: 'rgba(255,180,180,0.8)',
+          color: 'var(--crimson)',
           cursor: 'pointer',
           fontSize: 12,
         }}>
@@ -283,7 +284,8 @@ export default function Layout() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {isMobile && (
           <div style={{
-            background: 'var(--sidebar-bg)',
+            background: 'var(--white)',
+            borderBottom: '1px solid var(--gray-100)',
             padding: '10px 16px',
             display: 'flex',
             alignItems: 'center',
@@ -292,18 +294,18 @@ export default function Layout() {
             top: 0,
             zIndex: 50,
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, color: '#fff' }}>
-              <img src="/banner.png" alt="RKA" style={{
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, color: 'var(--text)' }}>
+              <img src={dark ? '/banner.png' : '/banner-light.png'} alt="RKA" style={{
                 height: 28,
                 width: 'auto',
                 display: 'block',
               }} />
             </div>
             <button onClick={() => setMobileOpen(o => !o)} style={{
-              background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 8,
+              background: 'var(--gray-50)', border: '1px solid var(--gray-100)', borderRadius: 99,
               padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text)" strokeWidth="2">
                 {mobileOpen ? <path d="M18 6L6 18M6 6l12 12" /> : <><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></>}
               </svg>
             </button>

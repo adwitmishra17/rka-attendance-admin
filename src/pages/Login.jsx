@@ -65,8 +65,8 @@ function messageForError(e) {
 function actionBtn(incomplete, isSigning) {
   return {
     width: '100%', padding: '12px 16px',
-    background: incomplete ? 'rgba(255,255,255,0.14)' : '#ffffff',
-    color: incomplete ? 'rgba(245,245,243,0.45)' : '#1a1a1a',
+    background: incomplete ? 'var(--gray-100, #E9E8E0)' : '#ffffff',
+    color: incomplete ? 'var(--text-muted, #75746B)' : '#1a1a1a',
     border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 500,
     cursor: incomplete ? 'not-allowed' : (isSigning ? 'wait' : 'pointer'),
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
@@ -158,44 +158,44 @@ export default function Login({ authError }) {
   function changeNumber() { setStep('phone'); setError(''); setInfo(''); setOtp('') }
 
   const linkBtn = {
-    background: 'none', border: 'none', color: 'var(--gold-light, #e6c557)',
+    background: 'none', border: 'none', color: 'var(--green, #3E8E5A)',
     fontSize: 12, cursor: 'pointer', textDecoration: 'underline', padding: 4, fontFamily: 'inherit',
   }
-  const fieldFocus = (el, on) => { el.style.borderColor = on ? 'var(--gold-light, #e6c557)' : 'rgba(255,255,255,0.12)' }
+  const fieldFocus = (el, on) => { el.style.borderColor = on ? 'var(--green, #3E8E5A)' : 'var(--gray-200, #DBDAD0)' }
 
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(135deg, #0d2818 0%, #1b3d1b 50%, #0d2818 100%)',
+      background: 'var(--app-bg, #EFEFEA)',
       padding: 20, position: 'relative', overflow: 'hidden',
     }}>
-      <div style={{ position: 'absolute', top: '-20%', right: '-10%', width: '60%', height: '70%', background: 'radial-gradient(circle, rgba(201,162,39,0.08) 0%, transparent 60%)', pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', bottom: '-20%', left: '-10%', width: '50%', height: '60%', background: 'radial-gradient(circle, rgba(192,0,12,0.06) 0%, transparent 60%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', top: '-20%', right: '-10%', width: '60%', height: '70%', background: 'radial-gradient(circle, rgba(62,142,90,0.10) 0%, transparent 60%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', bottom: '-20%', left: '-10%', width: '50%', height: '60%', background: 'radial-gradient(circle, rgba(59,111,181,0.08) 0%, transparent 60%)', pointerEvents: 'none' }} />
 
       <div style={{ width: '100%', maxWidth: 460, position: 'relative', zIndex: 1 }}>
         {/* Banner */}
         <div style={{ textAlign: 'center', marginBottom: 36 }}>
-          <img src="/banner.png" alt="Radhakrishna Academy" style={{ width: '100%', maxWidth: 400, height: 'auto', display: 'inline-block', filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.4))' }} />
+          <img src="/banner-light.png" alt="Radhakrishna Academy" style={{ width: '100%', maxWidth: 400, height: 'auto', display: 'inline-block' }} />
         </div>
 
         {/* Glass-card form */}
         <div style={{
-          background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-          borderRadius: 14, padding: '32px 30px 28px',
-          backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+          background: 'var(--white, #FFFFFF)', border: '1px solid var(--gray-100, #E9E8E0)',
+          borderRadius: 16, padding: '32px 30px 28px',
+          boxShadow: 'var(--shadow-md, 0 6px 18px rgba(38,37,31,0.07))',
         }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 600, color: '#ffffff', textAlign: 'center', marginBottom: 4 }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 600, color: 'var(--text, #26251F)', textAlign: 'center', marginBottom: 4 }}>
             Sign in
           </div>
-          <div style={{ fontSize: 11, color: 'rgba(245,245,243,0.6)', letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500, textAlign: 'center', marginBottom: 22 }}>
+          <div style={{ fontSize: 11, color: 'var(--gray-800, #3B3A32)', letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500, textAlign: 'center', marginBottom: 22 }}>
             Employee Management System
           </div>
 
           {/* ---- GOOGLE MODE ---- */}
           {mode === 'google' && (
             <>
-              <p style={{ fontSize: 13, color: 'rgba(245,245,243,0.7)', textAlign: 'center', marginBottom: 22, lineHeight: 1.6 }}>
-                Sign in with your <strong style={{ color: 'var(--gold-light, #e6c557)' }}>@rkacademyballia.in</strong> Google account to access the Human Resource Management System.
+              <p style={{ fontSize: 13, color: 'var(--text-muted, #75746B)', textAlign: 'center', marginBottom: 22, lineHeight: 1.6 }}>
+                Sign in with your <strong style={{ color: 'var(--green, #3E8E5A)' }}>@rkacademyballia.in</strong> Google account to access the Human Resource Management System.
               </p>
 
               <button onClick={handleSignIn} disabled={signing} style={{
@@ -216,15 +216,15 @@ export default function Login({ authError }) {
               </button>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '16px 0' }}>
-                <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.1)' }} />
-                <span style={{ fontSize: 11, color: 'rgba(245,245,243,0.4)' }}>or</span>
-                <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.1)' }} />
+                <div style={{ flex: 1, height: 1, background: 'var(--gray-100, #E9E8E0)' }} />
+                <span style={{ fontSize: 11, color: 'var(--text-muted, #75746B)' }}>or</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--gray-100, #E9E8E0)' }} />
               </div>
 
               <button onClick={switchToPhone} disabled={signing} style={{
                 width: '100%', padding: '11px 16px', background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.18)', borderRadius: 10,
-                color: 'rgba(245,245,243,0.85)', fontSize: 13.5, fontWeight: 500,
+                border: '1px solid var(--gray-200, #DBDAD0)', borderRadius: 10,
+                color: 'var(--text-muted, #75746B)', fontSize: 13.5, fontWeight: 500,
                 cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="7" y="2" width="10" height="20" rx="2" /><line x1="11" y1="18" x2="13" y2="18" /></svg>
@@ -236,11 +236,11 @@ export default function Login({ authError }) {
           {/* ---- PHONE MODE: enter number ---- */}
           {mode === 'phone' && step === 'phone' && (
             <>
-              <p style={{ fontSize: 13, color: 'rgba(245,245,243,0.7)', textAlign: 'center', marginBottom: 18, lineHeight: 1.6 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-muted, #75746B)', textAlign: 'center', marginBottom: 18, lineHeight: 1.6 }}>
                 Enter your registered mobile number and we'll send a one-time code.
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, overflow: 'hidden', marginBottom: 14 }}>
-                <span style={{ padding: '12px 12px', color: 'rgba(245,245,243,0.55)', fontSize: 14, borderRight: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}>+91</span>
+              <div style={{ display: 'flex', alignItems: 'center', background: 'var(--gray-50, #F5F5F0)', border: '1px solid var(--gray-200, #DBDAD0)', borderRadius: 10, overflow: 'hidden', marginBottom: 14 }}>
+                <span style={{ padding: '12px 12px', color: 'var(--text-muted, #75746B)', fontSize: 14, borderRight: '1px solid var(--gray-200, #DBDAD0)', background: 'var(--gray-100, #E9E8E0)' }}>+91</span>
                 <input
                   type="tel" inputMode="numeric" autoFocus value={phone}
                   onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
@@ -248,7 +248,7 @@ export default function Login({ authError }) {
                   onFocus={(e) => fieldFocus(e.target.parentElement, true)}
                   onBlur={(e) => fieldFocus(e.target.parentElement, false)}
                   placeholder="10-digit mobile number"
-                  style={{ flex: 1, padding: '12px 14px', background: 'transparent', border: 'none', color: '#fff', fontSize: 14, outline: 'none' }}
+                  style={{ flex: 1, padding: '12px 14px', background: 'transparent', border: 'none', color: 'var(--text, #26251F)', fontSize: 14, outline: 'none' }}
                 />
               </div>
               <button onClick={handleSendOtp} disabled={signing || phone.length !== 10} style={actionBtn(phone.length !== 10, signing)}>
@@ -263,7 +263,7 @@ export default function Login({ authError }) {
           {/* ---- PHONE MODE: enter OTP ---- */}
           {mode === 'phone' && step === 'otp' && (
             <>
-              <p style={{ fontSize: 13, color: 'rgba(245,245,243,0.7)', textAlign: 'center', marginBottom: 18, lineHeight: 1.6 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-muted, #75746B)', textAlign: 'center', marginBottom: 18, lineHeight: 1.6 }}>
                 Enter the 6-digit code sent to<br />+91 {phone.slice(0, 5)} {phone.slice(5)}
               </p>
               <input
@@ -273,14 +273,14 @@ export default function Login({ authError }) {
                 onFocus={(e) => fieldFocus(e.target, true)}
                 onBlur={(e) => fieldFocus(e.target, false)}
                 placeholder="6-digit code"
-                style={{ width: '100%', padding: '12px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, color: '#fff', fontSize: 17, letterSpacing: '0.4em', textAlign: 'center', outline: 'none', boxSizing: 'border-box', marginBottom: 14 }}
+                style={{ width: '100%', padding: '12px 14px', background: 'var(--gray-50, #F5F5F0)', border: '1px solid var(--gray-200, #DBDAD0)', borderRadius: 10, color: 'var(--text, #26251F)', fontSize: 17, letterSpacing: '0.4em', textAlign: 'center', outline: 'none', boxSizing: 'border-box', marginBottom: 14 }}
               />
               <button onClick={handleVerifyOtp} disabled={signing || otp.length !== 6} style={actionBtn(otp.length !== 6, signing)}>
                 {signing ? <><Spinner />Verifying…</> : 'Verify & sign in'}
               </button>
               <div style={{ textAlign: 'center', marginTop: 14, display: 'flex', justifyContent: 'center', gap: 6, alignItems: 'center' }}>
                 <button onClick={handleSendOtp} disabled={signing} style={linkBtn}>Resend code</button>
-                <span style={{ color: 'rgba(245,245,243,0.25)', fontSize: 12 }}>·</span>
+                <span style={{ color: 'var(--text-muted, #75746B)', fontSize: 12 }}>·</span>
                 <button onClick={changeNumber} disabled={signing} style={linkBtn}>Change number</button>
               </div>
             </>
@@ -293,12 +293,12 @@ export default function Login({ authError }) {
             </div>
           )}
           {info && !error && !authError && (
-            <div style={{ marginTop: 16, padding: '10px 14px', background: 'rgba(201,162,39,0.12)', border: '1px solid rgba(201,162,39,0.3)', borderRadius: 8, fontSize: 12, color: 'var(--gold-light, #e6c557)', lineHeight: 1.5, textAlign: 'center' }}>
+            <div style={{ marginTop: 16, padding: '10px 14px', background: 'rgba(201,162,39,0.12)', border: '1px solid rgba(201,162,39,0.3)', borderRadius: 8, fontSize: 12, color: 'var(--green, #3E8E5A)', lineHeight: 1.5, textAlign: 'center' }}>
               {info}
             </div>
           )}
 
-          <div style={{ marginTop: 22, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 11, color: 'rgba(245,245,243,0.4)', textAlign: 'center' }}>
+          <div style={{ marginTop: 22, paddingTop: 18, borderTop: '1px solid var(--gray-100, #E9E8E0)', fontSize: 11, color: 'var(--gray-800, #3B3A32)', textAlign: 'center' }}>
             Use the same admin account as the Academic Tracker.
           </div>
         </div>

@@ -1,52 +1,57 @@
 :root {
   /* Brand colors — matched to existing RKA admin app */
-  --green-dark: #1a4a2e;
-  --green: #2a6b44;
-  --green-light: #e6f0ea;
-  --green-muted: #d0e0d6;
+  --green-dark: #2C4A38;
+  --green: #3E8E5A;
+  --green-light: #E4EFE8;
+  --green-muted: #C9DFD1;
 
-  /* Sidebar background — its own token so it stays a deep forest green in
-     both themes, independent of --green-dark (which lifts in dark mode). */
-  --sidebar-bg: #1a4a2e;
+  /* Sidebar — a light card surface in the House theme (dark twin below). */
+  --sidebar-bg: #FFFFFF;
 
-  --crimson: #8b1a1a;
-  --crimson-light: #fdebeb;
+  --crimson: #B5372A;
+  --crimson-light: #F6E4E2;
 
-  --gold: #c9a227;
-  --gold-dark: #8a6f10;
-  --gold-light: #fdf6dc;
+  --gold: #A87E12;
+  --gold-dark: #8A670E;
+  --gold-light: #F5EBD8;
 
   /* Status accents — used by Attendance STATUS_STYLES (half day / on leave) */
-  --info: #1e40af;
-  --info-light: rgba(96, 165, 250, 0.15);
-  --leave: #6b21a8;
-  --leave-light: rgba(168, 85, 247, 0.15);
+  --info: #3B6FB5;
+  --info-light: #E7EDF6;
+  --leave: #7A4FA8;
+  --leave-light: #EFE8F6;
 
   --white: #ffffff;
-  --gray-50: #f7f8fa;
-  --gray-100: #f0f1f3;
-  --gray-200: #e5e7eb;
-  --gray-300: #d4d7dc;
-  --gray-400: #a0a4a9;
-  --text: #1a1a1a;
-  --text-muted: #6b7177;
+  --gray-50: #F5F5F0;
+  --gray-100: #E9E8E0;
+  --gray-200: #DBDAD0;
+  --gray-300: #C9C8BE;
+  --gray-400: #9C9B90;
+  --text: #26251F;
+  --text-muted: #75746B;
 
   /* App background — the body surface, kept distinct from card --white */
-  --app-bg: #f7f8fa;
+  --app-bg: #EFEFEA;
 
-  --font-display: 'Playfair Display', Georgia, serif;
+  --font-display: 'DM Sans', -apple-system, 'Segoe UI', sans-serif;
   --font-body: 'DM Sans', -apple-system, 'Segoe UI', sans-serif;
 
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.1);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 3px rgba(38,37,31,0.06);
+  --shadow-md: 0 6px 18px rgba(38,37,31,0.07);
+  --shadow-lg: 0 12px 36px rgba(38,37,31,0.10);
+
+  /* House identity — reserved for house chips/tags, never statuses */
+  --house-blue: #3B6FB5;  --house-blue-light: #E7EDF6;
+  --house-red: #C24444;   --house-red-light: #F6E4E4;
+  --house-green: #3E8E5A; --house-green-light: #E4EFE8;
+  --house-yellow: #A87E12;--house-yellow-light: #F5EBD8;
 }
 
 /* ============================================================================
-   PITCH-BLACK DARK MODE
+   HOUSE DARK — warm dark-greige twin (was pitch black)
    Pure-token override — every component is styled through these CSS variables,
    so nothing else needs to change. Pure #000 page, barely-lifted panels, and
    hairline borders doing the work instead of shadows.
@@ -56,47 +61,47 @@
   color-scheme: dark;
 
   /* Page + surfaces */
-  --app-bg: #000000;       /* body — pitch black */
-  --white: #0f0f11;        /* cards, panels, inputs — barely lifted off black */
-  --gray-50: #161618;      /* hover states, table headers, inset strips */
-  --gray-100: #1c1c1f;     /* dividers, neutral pill backgrounds */
-  --gray-200: #2a2a2e;     /* hairline borders */
-  --gray-300: #3a3a40;     /* switch track, stronger borders */
-  --gray-400: #8c8c94;     /* faint labels / icons */
+  --app-bg: #191A15;       /* body — warm dark greige */
+  --white: #22231C;        /* cards, panels, inputs */
+  --gray-50: #262720;      /* hover states, table headers, inset strips */
+  --gray-100: #2E2F27;     /* dividers, neutral pill backgrounds */
+  --gray-200: #3A3B32;     /* hairline borders */
+  --gray-300: #4A4B40;     /* switch track, stronger borders */
+  --gray-400: #7C7D72;     /* faint labels / icons */
 
   /* Text */
-  --text: #ededed;
-  --text-muted: #9a9aa2;
+  --text: #E9E8E0;
+  --text-muted: #9A9B8F;
 
   /* Brand green — lifted so heading + section-title text reads on black,
      while white-on-green buttons stay legible. */
-  --green-dark: #3f9e68;
-  --green: #46a673;
-  --green-light: rgba(63, 158, 104, 0.16);
-  --green-muted: rgba(63, 158, 104, 0.32);
+  --green-dark: #6FBF8E;
+  --green: #57A877;
+  --green-light: #22301F;
+  --green-muted: #2C4A38;
 
-  /* Sidebar stays a deep near-black green so it reads as a rail on pure black */
-  --sidebar-bg: #11271a;
+  /* Sidebar — dark card surface */
+  --sidebar-bg: #1F201A;
 
   /* Crimson — mid red: legible as text and usable as a button background. */
-  --crimson: #db4f53;
-  --crimson-light: rgba(219, 79, 83, 0.15);
+  --crimson: #D9695C;
+  --crimson-light: #33211E;
 
   /* Gold */
-  --gold: #d4ad3c;
-  --gold-dark: #e3bd4e;
-  --gold-light: rgba(212, 173, 60, 0.15);
+  --gold: #C9A03A;
+  --gold-dark: #D9B45A;
+  --gold-light: #302818;
 
   /* Status accents */
-  --info: #6ea8f0;
-  --info-light: rgba(96, 165, 250, 0.16);
-  --leave: #bd8ef0;
-  --leave-light: rgba(168, 85, 247, 0.18);
+  --info: #6C97D6;
+  --info-light: #1F2733;
+  --leave: #B08FD9;
+  --leave-light: #2A2133;
 
   /* Deeper shadows so panels still read as depth against pure black */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.5);
-  --shadow-md: 0 2px 8px rgba(0,0,0,0.55);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.65);
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.4);
+  --shadow-md: 0 6px 20px rgba(0,0,0,0.45);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.55);
 }
 
 * {
@@ -151,6 +156,6 @@ a {
 }
 
 @keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(26, 74, 46, 0.4); }
-  50% { box-shadow: 0 0 0 6px rgba(26, 74, 46, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(62, 142, 90, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(62, 142, 90, 0); }
 }

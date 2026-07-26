@@ -67,7 +67,7 @@ export default function BranchSwitcher() {
           background: isAll ? 'var(--gold-light)' : 'var(--green-light)',
           color: isAll ? 'var(--gold-dark)' : 'var(--green-dark)',
           border: '1px solid',
-          borderColor: isAll ? 'rgba(201,162,39,0.3)' : 'rgba(26,74,46,0.15)',
+          borderColor: isAll ? 'var(--gold)' : 'var(--green-muted)',
           borderRadius: 'var(--radius-sm)',
           fontSize: 12, fontWeight: 600,
           cursor: 'pointer',
