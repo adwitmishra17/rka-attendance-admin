@@ -160,6 +160,27 @@ export default function Attendance() {
     return () => clearInterval(interval)
   }, [selectedDate, isToday])
 
+  // Realtime: reload the moment a punch lands instead of waiting for the
+  // 30s poll (which stays as a fallback). Bursts — in/out pairs, a queue of
+  // staff at the device — coalesce into one reload via the 800ms timer.
+  useEffect(() => {
+    if (!isToday) return
+    let timer = null
+    const channel = supabase
+      .channel('attendance-live')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'attendance_events' },
+        () => {
+          if (timer) return
+          timer = setTimeout(() => { timer = null; loadData() }, 800)
+        })
+      .subscribe()
+    return () => {
+      if (timer) clearTimeout(timer)
+      supabase.removeChannel(channel)
+    }
+  }, [selectedDate, isToday, effectiveBranches])
+
   // Build a map for fast lookup
   const dailyByEmployee = useMemo(() => {
     const m = new Map()

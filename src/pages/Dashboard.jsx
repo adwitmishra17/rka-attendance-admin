@@ -118,7 +118,24 @@ export default function Dashboard() {
     // Refresh every 30s so the dashboard reflects punches without manual reload.
     // Cheap — counts + a 50-row select. Aligns with the Attendance page cadence.
     const interval = setInterval(load, 30_000)
-    return () => { cancelled = true; clearInterval(interval) }
+    // Realtime: refresh immediately when a punch lands (30s poll = fallback).
+    // 800ms timer coalesces bursts into a single reload.
+    let rtTimer = null
+    const channel = supabase
+      .channel('dashboard-attendance-live')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'attendance_events' },
+        () => {
+          if (rtTimer) return
+          rtTimer = setTimeout(() => { rtTimer = null; load() }, 800)
+        })
+      .subscribe()
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+      if (rtTimer) clearTimeout(rtTimer)
+      supabase.removeChannel(channel)
+    }
   }, [effectiveBranches])
 
   // Derive kiosk display from raw stats
