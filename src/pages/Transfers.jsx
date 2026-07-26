@@ -211,8 +211,9 @@ export default function Transfers() {
             {decision.kind === 'approve' && (
               <div style={{ padding: '10px 12px', background: 'var(--gold-light)', border: '1px solid var(--gold)', borderRadius: 'var(--radius-sm)', fontSize: 12.5, marginBottom: 12, color: 'var(--text)' }}>
                 Punches will attribute to {decision.transfer.to_branch} immediately. The fingerprint lives on the
-                physical device — enrol them on the <b>{decision.transfer.to_branch}</b> device and remove them from
-                the <b>{decision.transfer.from_branch}</b> one.
+                physical device — move it with <b>fp-export.sh</b> (on the {decision.transfer.from_branch} device) and
+                <b>fp-import.sh</b> (on the {decision.transfer.to_branch} one), then <b>fp-delete.sh</b> on the source —
+                or re-enrol by finger at the destination.
               </div>
             )}
             <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 5 }}>Note (optional)</label>
