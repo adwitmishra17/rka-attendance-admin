@@ -112,7 +112,6 @@ export default function FleetExpiryWidget() {
       border: '1px solid var(--gray-200)',
       borderRadius: 'var(--radius-lg)',
       padding: '20px 24px',
-      marginBottom: 20,
     }}>
       <div style={{
         display: 'flex',

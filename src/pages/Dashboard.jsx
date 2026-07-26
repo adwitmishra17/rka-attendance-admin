@@ -137,8 +137,8 @@ export default function Dashboard() {
         'Marked in today'
 
   return (
-    <div style={{ padding: '32px 36px', maxWidth: 1200 }}>
-      <div className="fade-in" style={{ marginBottom: 28 }}>
+    <div style={{ padding: '32px 36px', maxWidth: 1200, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div className="fade-in" style={{ marginBottom: 8 }}>
         <h1 style={{
           fontFamily: 'var(--font-display)',
           fontSize: 28, fontWeight: 600,
@@ -161,7 +161,6 @@ export default function Dashboard() {
         border: '1px solid var(--gray-200)',
         borderRadius: 'var(--radius-lg)',
         padding: '20px 24px',
-        marginBottom: 20,
       }}>
         <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 14 }}>
           System Status
@@ -254,7 +253,6 @@ function KioskStatusPanel({ effectiveBranches }) {
 
   return (
     <div style={{
-      marginTop: 24,
       background: 'var(--white)',
       border: '1px solid var(--gray-200)',
       borderRadius: 'var(--radius-lg)',
