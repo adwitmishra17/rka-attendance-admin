@@ -3,8 +3,8 @@ import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 import { applyBranchFilterArray, applyBranchFilterNullable } from '../lib/branchQuery'
 import { branchLabel } from '../lib/branch'
-import ExpiryWidget from '../components/ExpiryWidget'
-import FleetExpiryWidget from '../components/FleetExpiryWidget'
+// Document/fleet expiry widgets removed from the dashboard (2026-07-26,
+// user request) — components remain in components/ if ever wanted back.
 
 // "Today" computed in Asia/Kolkata so the date boundary matches the device's
 // local clock and the trigger that populates attendance_daily.
@@ -194,9 +194,6 @@ export default function Dashboard() {
           <StatusPill label="Supabase Database" status={supabaseStatus} />
         </div>
       </div>
-      <ExpiryWidget />
-      <FleetExpiryWidget />
-
       {/* Quick stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
         <StatCard label="Employees" value={stats.employees} hint={`In ${branchLabel(currentBranch)}`} />
