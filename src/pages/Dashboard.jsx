@@ -2,9 +2,14 @@ import React, { useEffect, useState } from 'react'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 import { applyBranchFilterArray, applyBranchFilterNullable } from '../lib/branchQuery'
-import { branchLabel } from '../lib/branch'
-// Document/fleet expiry widgets removed from the dashboard (2026-07-26,
-// user request) — components remain in components/ if ever wanted back.
+import { BRANCHES, branchLabel } from '../lib/branch'
+import FleetExpiryWidget from '../components/FleetExpiryWidget'
+// Document expiry widget stays off the dashboard (2026-07-26, user request);
+// the fleet expiry prompt was restored the same day.
+
+// The Hostinger Hikvision receiver sees every device heartbeat (they never
+// reach the database) and publishes per-branch liveness here.
+const KIOSK_STATUS_URL = 'https://teacher.rkacademyballia.in/hik/status'
 
 // "Today" computed in Asia/Kolkata so the date boundary matches the device's
 // local clock and the trigger that populates attendance_daily.
@@ -40,8 +45,6 @@ export default function Dashboard() {
     holidays: '—',
     presentToday: null,        // number of employees with status='present' today
     totalActive: null,         // total active employees in scope
-    deviceLastSeen: null,      // ISO string of most recent event_time
-    deviceCount: 0,            // distinct kiosk_device_id count
   })
   const [supabaseStatus, setSupabaseStatus] = useState('checking')
 
@@ -79,34 +82,20 @@ export default function Dashboard() {
           .eq('employees.attendance_exempt', false)
         if (effectiveBranches.length > 0) presentQ = presentQ.in('branch_code', effectiveBranches)
 
-        // device status: most recent event_time + count of distinct devices
-        // We grab a small window of recent events and derive both metrics
-        // client-side (avoids needing a custom RPC for distinct counts).
-        let deviceQ = supabase
-          .from('attendance_events')
-          .select('event_time, kiosk_device_id')
-          .order('event_time', { ascending: false })
-          .limit(50)
-        if (effectiveBranches.length > 0) deviceQ = deviceQ.in('branch_code', effectiveBranches)
+        // Per-device liveness moved to KioskStatusPanel (per-branch cards).
 
-        const [emp, active, hol, present, device] = await Promise.all([empQ, activeQ, holQ, presentQ, deviceQ])
+        const [emp, active, hol, present] = await Promise.all([empQ, activeQ, holQ, presentQ])
         if (cancelled) return
         if (emp.error) throw emp.error
         if (active.error) throw active.error
         if (hol.error) throw hol.error
         if (present.error) throw present.error
-        if (device.error) throw device.error
-
-        const deviceRows = device.data || []
-        const distinctDevices = new Set(deviceRows.map(r => r.kiosk_device_id).filter(Boolean))
 
         setStats({
           employees: emp.count ?? 0,
           holidays: hol.count ?? 0,
           presentToday: present.count ?? 0,
           totalActive: active.count ?? 0,
-          deviceLastSeen: deviceRows[0]?.event_time ?? null,
-          deviceCount: distinctDevices.size,
         })
         setSupabaseStatus('connected')
       } catch (e) {
@@ -137,18 +126,6 @@ export default function Dashboard() {
       supabase.removeChannel(channel)
     }
   }, [effectiveBranches])
-
-  // Derive kiosk display from raw stats
-  const lastSeenMins = minutesAgo(stats.deviceLastSeen)
-  const kioskStatus =
-    lastSeenMins == null ? 'Not deployed' :
-      lastSeenMins < 2 ? 'Online' :
-        lastSeenMins < 30 ? 'Idle' :
-          'Offline'
-  const kioskHint =
-    lastSeenMins == null ? 'No device events yet' :
-      lastSeenMins < 2 ? `${stats.deviceCount} device${stats.deviceCount === 1 ? '' : 's'} reachable` :
-        `Last event ${relTime(lastSeenMins)}`
 
   // Derive attendance display
   const attendanceValue =
@@ -199,27 +176,151 @@ export default function Dashboard() {
         <StatCard label="Employees" value={stats.employees} hint={`In ${branchLabel(currentBranch)}`} />
         <StatCard label="Holidays" value={stats.holidays} hint={`Applicable to ${branchLabel(currentBranch)}`} />
         <StatCard label="Today's attendance" value={attendanceValue} hint={attendanceHint} />
-        <StatCard
-          label="Biometric kiosk"
-          value={kioskStatus}
-          hint={kioskHint}
-          accent={kioskStatus === 'Online' ? 'green' : kioskStatus === 'Idle' ? 'gold' : kioskStatus === 'Offline' ? 'crimson' : 'muted'}
-        />
       </div>
 
-      <div style={{
-        marginTop: 24,
-        padding: '20px 24px',
-        background: 'var(--gold-light)',
-        border: '1px solid rgba(201,162,39,0.25)',
-        borderRadius: 'var(--radius-md)',
-      }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gold-dark)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          v2 — Biometric Attendance Live
-        </div>
-        <p style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
-          Hikvision device pushes fingerprint punches directly to the HRMS. Daily rollup runs automatically on each event. Next: leave management, salary, and remote enrollment from this dashboard.
-        </p>
+      {/* Per-device biometric kiosk status — one card per branch in scope;
+          "All Branches" shows both devices. */}
+      <KioskStatusPanel effectiveBranches={effectiveBranches} />
+
+      <FleetExpiryWidget />
+    </div>
+  )
+}
+
+// ============================================================================
+// Biometric kiosk status — one card per branch device.
+// Two signals, merged:
+//   1. Heartbeat (authoritative "online"): the Hostinger receiver absorbs a
+//      keepalive every few seconds and republishes per-branch liveness.
+//      A device still pointed at the old Supabase edge function has no
+//      heartbeat feed until it is switched over.
+//   2. Last punch from attendance_events (works on either path) — recency +
+//      today's punch count as the fallback signal.
+// ============================================================================
+function KioskStatusPanel({ effectiveBranches }) {
+  const branches = effectiveBranches.length > 0
+    ? effectiveBranches
+    : BRANCHES.map(b => b.code)
+  const branchesKey = branches.join(',')
+
+  const [rows, setRows] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      // Heartbeat feed — best effort; the dashboard must not hang on it.
+      let beats = {}
+      try {
+        const ctl = new AbortController()
+        const timer = setTimeout(() => ctl.abort(), 4000)
+        const r = await fetch(KIOSK_STATUS_URL, { signal: ctl.signal })
+        clearTimeout(timer)
+        if (r.ok) {
+          const j = await r.json()
+          for (const d of j.devices || []) beats[d.branch] = d
+        }
+      } catch { /* receiver unreachable — punch data still renders */ }
+
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+      const dayStartUtc = new Date(`${today}T00:00:00+05:30`).toISOString()
+
+      const out = await Promise.all(branches.map(async code => {
+        const [last, count] = await Promise.all([
+          supabase.from('attendance_events')
+            .select('event_time')
+            .eq('branch_code', code)
+            .order('event_time', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          supabase.from('attendance_events')
+            .select('id', { count: 'exact', head: true })
+            .eq('branch_code', code)
+            .gte('event_time', dayStartUtc),
+        ])
+        return {
+          code,
+          lastPunch: last.data?.event_time ?? null,
+          punchesToday: count.count ?? 0,
+          beat: beats[code] ?? null,
+        }
+      }))
+      if (!cancelled) setRows(out)
+    }
+    load()
+    const interval = setInterval(load, 30_000)
+    return () => { cancelled = true; clearInterval(interval) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchesKey])
+
+  return (
+    <div style={{
+      marginTop: 24,
+      background: 'var(--white)',
+      border: '1px solid var(--gray-200)',
+      borderRadius: 'var(--radius-lg)',
+      padding: '20px 24px',
+    }}>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 14 }}>
+        Biometric kiosk status
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+        {(rows ?? branches.map(code => ({ code, loading: true }))).map(d => (
+          <DeviceCard key={d.code} device={d} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function DeviceCard({ device }) {
+  if (device.loading) {
+    return (
+      <div style={{ border: '1px solid var(--gray-100)', borderRadius: 'var(--radius-md)', padding: '13px 15px', color: 'var(--text-muted)', fontSize: 12 }}>
+        {branchLabel(device.code)} — checking…
+      </div>
+    )
+  }
+  const beatFresh = device.beat && device.beat.online
+  const punchMins = minutesAgo(device.lastPunch)
+
+  // Heartbeat wins; punches are the fallback signal for devices still on the
+  // old cloud-function path (no heartbeat feed).
+  const status =
+    beatFresh ? 'Online' :
+      device.beat ? 'Offline' :               // had a heartbeat feed, went quiet
+        punchMins == null ? 'Not deployed' :
+          punchMins < 30 ? 'Active' :
+            punchMins < 480 ? 'Idle' : 'Offline'
+  const color =
+    status === 'Online' || status === 'Active' ? 'var(--green)' :
+      status === 'Idle' ? 'var(--gold-dark)' :
+        status === 'Offline' ? 'var(--crimson)' : 'var(--text-muted)'
+  const bg =
+    status === 'Online' || status === 'Active' ? 'var(--green-light)' :
+      status === 'Idle' ? 'var(--gold-light)' :
+        status === 'Offline' ? 'var(--crimson-light)' : 'var(--gray-100)'
+
+  const lastPunchLabel = device.lastPunch
+    ? new Date(device.lastPunch).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })
+    : null
+
+  return (
+    <div style={{ border: '1px solid var(--gray-100)', borderRadius: 'var(--radius-md)', padding: '13px 15px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 650, color: 'var(--text)' }}>{branchLabel(device.code)}</div>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', background: bg, color, borderRadius: 999, fontSize: 11, fontWeight: 600 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
+          {status}
+        </span>
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.7 }}>
+        {device.beat
+          ? <>Heartbeat {device.beat.secondsAgo}s ago</>
+          : <>No heartbeat feed (device on cloud path)</>}
+        <br />
+        {device.lastPunch
+          ? <>{device.punchesToday} punch{device.punchesToday === 1 ? '' : 'es'} today · last at {lastPunchLabel} ({relTime(punchMins)})</>
+          : <>No punches recorded yet</>}
       </div>
     </div>
   )
