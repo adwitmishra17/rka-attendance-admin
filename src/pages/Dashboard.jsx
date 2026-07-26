@@ -351,25 +351,30 @@ function StatCard({ label, value, hint, accent }) {
   )
 }
 
+// House-style status chip: quiet neutral chip, a haloed status dot, the
+// service name in ink and the state as a word — tinted treatment is
+// reserved for the error state so problems are the only thing that pops.
 function StatusPill({ label, status }) {
   const isOk = status === 'connected'
   const isLoading = status === 'checking'
-  const color = isOk ? 'var(--green)' : isLoading ? 'var(--gold-dark)' : 'var(--crimson)'
-  const bg = isOk ? 'var(--green-light)' : isLoading ? 'var(--gold-light)' : 'var(--crimson-light)'
+  const dot = isOk ? 'var(--green)' : isLoading ? 'var(--gold-dark)' : 'var(--crimson)'
+  const halo = isOk ? 'var(--green-light)' : isLoading ? 'var(--gold-light)' : 'var(--crimson-light)'
+  const word = isOk ? 'Connected' : isLoading ? 'Checking…' : status
   return (
     <div style={{
-      display: 'flex',
+      display: 'inline-flex',
       alignItems: 'center',
       gap: 8,
-      padding: '6px 12px',
-      background: bg,
+      padding: '6px 13px 6px 10px',
+      background: isOk || isLoading ? 'var(--gray-50)' : 'var(--crimson-light)',
+      border: `1px solid ${isOk || isLoading ? 'var(--gray-100)' : 'var(--crimson)'}`,
       borderRadius: 999,
       fontSize: 12,
-      color,
-      fontWeight: 500,
+      lineHeight: 1,
     }}>
-      <span style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />
-      {label}: {isOk ? '✓' : isLoading ? '…' : status}
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot, boxShadow: `0 0 0 3px ${halo}`, flexShrink: 0 }} />
+      <span style={{ fontWeight: 650, color: 'var(--text)' }}>{label}</span>
+      <span style={{ fontWeight: 500, color: isOk || isLoading ? 'var(--text-muted)' : 'var(--crimson)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>{word}</span>
     </div>
   )
 }
