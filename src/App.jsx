@@ -106,8 +106,16 @@ export default function App() {
           return
         }
 
+        // Branch scope: the newer admin editor writes a branchCodes ARRAY
+        // (multi-branch admins); legacy docs carry a single branchCode.
+        // Prefer the array — this is what makes MAIN+CITY admins see both.
+        const fromArray = Array.isArray(data.branchCodes)
+          ? data.branchCodes.filter(c => BRANCH_CODES.includes(c))
+          : []
         let allowed
-        if (BRANCH_CODES.includes(data.branchCode)) {
+        if (fromArray.length > 0) {
+          allowed = fromArray
+        } else if (BRANCH_CODES.includes(data.branchCode)) {
           allowed = [data.branchCode]
         } else {
           console.warn(`Admin ${email} has missing/invalid branchCode (${data.branchCode}); defaulting to MAIN`)
