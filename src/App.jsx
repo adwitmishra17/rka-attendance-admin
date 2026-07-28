@@ -22,6 +22,7 @@ import VehicleProfile from './pages/VehicleProfile'
 import FleetSettings from './pages/FleetSettings'
 import Attendance from './pages/Attendance'
 import MonthlyReport from './pages/MonthlyReport'
+import AdvancesReport from './pages/AdvancesReport'
 import Holidays from './pages/Holidays'
 import ReportingTime from './pages/ReportingTime'
 import FaceEnrollment from './pages/FaceEnrollment'
@@ -188,6 +189,7 @@ export default function App() {
           <Route path="attendance" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Attendance />} />
           <Route path="transfers" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Transfers />} />
           <Route path="reports/monthly" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <MonthlyReport />} />
+          <Route path="reports/advances" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <AdvancesReport />} />
           <Route path="holidays" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <Holidays />} />
           <Route path="reporting-time" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <ReportingTime />} />
           <Route path="face-enrollment" element={adminRole === 'receptionist' ? <Navigate to="/walkins" replace /> : <FaceEnrollment />} />
