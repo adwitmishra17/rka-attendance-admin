@@ -20,6 +20,8 @@
   --info-light: #E7EDF6;
   --leave: #7A4FA8;
   --leave-light: #EFE8F6;
+  --teal: #1F8A7A;
+  --teal-light: #E0F0EE;
 
   --white: #ffffff;
   --gray-50: #F5F5F0;
@@ -97,6 +99,8 @@
   --info-light: #1F2733;
   --leave: #B08FD9;
   --leave-light: #2A2133;
+  --teal: #4FBFB0;
+  --teal-light: #17302C;
 
   /* Deeper shadows so panels still read as depth against pure black */
   --shadow-sm: 0 1px 4px rgba(0,0,0,0.4);

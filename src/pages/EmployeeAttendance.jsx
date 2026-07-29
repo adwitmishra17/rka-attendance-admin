@@ -144,6 +144,7 @@ export default function EmployeeAttendance({ employeeId }) {
     let holidayCount = 0
     let presentDays = 0
     let absentDays = 0
+    let schoolLeaveDays = 0
     let inOnlyDays = 0
     let lateMins = 0
     let earlyMins = 0
@@ -155,6 +156,7 @@ export default function EmployeeAttendance({ employeeId }) {
       if (c.iso > today) continue        // skip future days
       workingDays++
       if (c.status === 'present') presentDays++
+      else if (c.status === 'school_leave') schoolLeaveDays++
       else absentDays++
       if (c.ad) {
         if (c.ad.in_time && !c.ad.out_time) inOnlyDays++
@@ -162,7 +164,7 @@ export default function EmployeeAttendance({ employeeId }) {
         earlyMins += c.ad.early_leave_minutes || 0
       }
     }
-    return { workingDays, holidayCount, presentDays, absentDays, inOnlyDays, lateMins, earlyMins }
+    return { workingDays, holidayCount, presentDays, absentDays, schoolLeaveDays, inOnlyDays, lateMins, earlyMins }
   }, [grid])
 
   return (
@@ -197,6 +199,7 @@ export default function EmployeeAttendance({ employeeId }) {
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 18 }}>
         <Stat label="Present" value={summary.presentDays} accent="green" />
+        <Stat label="School Leave" value={summary.schoolLeaveDays} accent={summary.schoolLeaveDays > 0 ? 'teal' : 'muted'} hint="Paid — not deducted" />
         <Stat label="Absent" value={summary.absentDays} accent={summary.absentDays > 0 ? 'crimson' : 'muted'} />
         <Stat label="In-Only" value={summary.inOnlyDays} accent={summary.inOnlyDays > 0 ? 'gold' : 'muted'} hint="Forgot to punch out" />
         <Stat label="Holidays" value={summary.holidayCount} accent="muted" />
@@ -292,6 +295,9 @@ function StatusBadge({ status, holidayName }) {
     holiday: { label: holidayName || 'Holiday', bg: 'var(--gold-light)', fg: 'var(--gold-dark)' },
     future:  { label: '—',        bg: 'transparent',        fg: 'var(--text-muted)' },
     late:    { label: 'Late',     bg: 'var(--gold-light)',  fg: 'var(--gold-dark)' },
+    school_leave: { label: 'School Leave', bg: 'var(--teal-light)', fg: 'var(--teal)' },
+    on_leave: { label: 'On leave', bg: 'var(--leave-light)', fg: 'var(--leave)' },
+    half_day: { label: 'Half day', bg: 'var(--info-light)', fg: 'var(--info)' },
   }
   const m = map[status] || map.absent
   return (
@@ -314,6 +320,7 @@ function Stat({ label, value, accent = 'green', hint }) {
     accent === 'green'   ? 'var(--green-dark)' :
     accent === 'crimson' ? 'var(--crimson)' :
     accent === 'gold'    ? 'var(--gold-dark)' :
+    accent === 'teal'    ? 'var(--teal)' :
                             'var(--text-muted)'
   return (
     <div style={{

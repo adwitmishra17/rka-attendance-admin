@@ -115,6 +115,7 @@ export default function MonthlyReport() {
             branch: (e.branch_codes && e.branch_codes[0]) || '—',
             expected,
             present: 0,
+            school_leave: 0,
             inOnly: 0,
             lateMins: 0,
             earlyMins: 0,
@@ -124,13 +125,14 @@ export default function MonthlyReport() {
           const r = perEmp.get(ad.employee_id)
           if (!r) continue  // ad row for an employee outside scope, skip
           if (ad.status === 'present') r.present++
+          if (ad.status === 'school_leave') r.school_leave++
           if (ad.in_time && !ad.out_time) r.inOnly++
           r.lateMins += ad.late_minutes || 0
           r.earlyMins += ad.early_leave_minutes || 0
         }
 
         const result = Array.from(perEmp.values())
-          .map(r => ({ ...r, absent: Math.max(0, r.expected - r.present) }))
+          .map(r => ({ ...r, absent: Math.max(0, r.expected - r.present - r.school_leave) }))
           .sort((a, b) => (a.branch || '').localeCompare(b.branch || '') || a.name.localeCompare(b.name))
 
         if (!cancelled) {
@@ -156,7 +158,7 @@ export default function MonthlyReport() {
   function downloadCsv() {
     const headers = [
       'Name', 'Biometric Code', 'Branch',
-      'Expected Days', 'Present', 'Absent',
+      'Expected Days', 'Present', 'School Leave (paid)', 'Absent',
       'Days In-Only', 'Total Late Mins', 'Total Early Leave Mins',
     ]
     const escape = (v) => {
@@ -168,7 +170,7 @@ export default function MonthlyReport() {
     for (const r of rows) {
       lines.push([
         r.name, r.biometric_code, r.branch,
-        r.expected, r.present, r.absent,
+        r.expected, r.present, r.school_leave, r.absent,
         r.inOnly, r.lateMins, r.earlyMins,
       ].map(escape).join(','))
     }
@@ -188,7 +190,7 @@ export default function MonthlyReport() {
   // (payroll / disputes), as opposed to the collective summary above.
   const STATUS_LABEL = {
     present: 'Present', late: 'Late', half_day: 'Half day',
-    on_leave: 'On leave', absent: 'Absent', not_marked: 'Not marked',
+    on_leave: 'On leave', school_leave: 'School Leave', absent: 'Absent', not_marked: 'Not marked',
   }
   const fmtT = (t) => (t ? String(t).slice(0, 5) : '')
 
@@ -230,7 +232,7 @@ export default function MonthlyReport() {
       // Build the day grid (stop at today — no future rows) + per-status tallies.
       const body = []       // table rows
       const kinds = []      // per-row kind for styling: status key | 'sunday' | 'holiday' | 'unmarked'
-      const tally = { present: 0, late: 0, half_day: 0, on_leave: 0, absent: 0 }
+      const tally = { present: 0, late: 0, half_day: 0, on_leave: 0, school_leave: 0, absent: 0 }
       let lateMins = 0, earlyMins = 0
       for (let d = new Date(monthStart + 'T00:00:00'); ; d.setDate(d.getDate() + 1)) {
         const iso = d.toLocaleDateString('en-CA')

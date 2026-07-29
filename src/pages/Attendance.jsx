@@ -12,6 +12,7 @@ const STATUS_STYLES = {
   absent: { bg: 'var(--crimson-light)', color: 'var(--crimson)', label: 'Absent' },
   half_day: { bg: 'var(--info-light)', color: 'var(--info)', label: 'Half day' },
   on_leave: { bg: 'var(--leave-light)', color: 'var(--leave)', label: 'On leave' },
+  school_leave: { bg: 'var(--teal-light)', color: 'var(--teal)', label: 'School Leave' },
   holiday: { bg: 'var(--gray-100)', color: 'var(--text-muted)', label: 'Holiday' },
   not_marked: { bg: 'var(--gray-100)', color: 'var(--text-muted)', label: 'Not marked' },
 }
@@ -232,7 +233,7 @@ export default function Attendance() {
   const stats = useMemo(() => {
     const out = {
       total: roster.length, present: 0, late: 0, absent: 0,
-      not_marked: 0, on_leave: 0, half_day: 0,
+      not_marked: 0, on_leave: 0, half_day: 0, school_leave: 0,
     }
     for (const r of roster) {
       if (r.status === 'present') out.present++
@@ -241,6 +242,7 @@ export default function Attendance() {
       else if (r.status === 'not_marked') out.not_marked++
       else if (r.status === 'on_leave') out.on_leave++
       else if (r.status === 'half_day') out.half_day++
+      else if (r.status === 'school_leave') out.school_leave++
     }
     return out
   }, [roster])
@@ -481,6 +483,7 @@ export default function Attendance() {
               <option value="late">Late</option>
               {isToday ? <option value="not_marked">Not marked</option> : <option value="absent">Absent</option>}
               <option value="on_leave">On leave</option>
+              <option value="school_leave">School Leave</option>
               <option value="holiday">Holiday</option>
             </select>
           </div>
@@ -848,6 +851,7 @@ const STATUS_OPTIONS = [
   { value: 'late',     label: 'Late',     hint: 'Marked late by admin', needsTimes: true  },
   { value: 'half_day', label: 'Half day', hint: 'Half-day attendance', needsTimes: true  },
   { value: 'on_leave', label: 'On leave', hint: 'Approved leave', needsTimes: false },
+  { value: 'school_leave', label: 'School Leave', hint: 'School-declared paid off — salary NOT deducted', needsTimes: false },
   { value: 'absent',   label: 'Absent',   hint: 'Did not come in', needsTimes: false },
 ]
 
