@@ -265,6 +265,13 @@ export default function Layout() {
         }}>
           Sign out
         </button>
+        {/* society credit */}
+        <div style={{
+          marginTop: 10, textAlign: 'center', fontSize: 9.5,
+          color: 'var(--text-muted)', lineHeight: 1.4,
+        }}>
+          crafted with <span style={{ color: 'var(--crimson)' }}>♥</span> by Radhakrishna Educational Society
+        </div>
       </div>
     </div>
   )
