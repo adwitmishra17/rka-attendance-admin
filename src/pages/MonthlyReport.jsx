@@ -265,6 +265,7 @@ export default function MonthlyReport() {
       // Build the day grid (stop at today — no future rows) + per-status tallies.
       const body = []       // table rows
       const kinds = []      // per-row kind for styling: status key | 'sunday' | 'holiday' | 'unmarked'
+      const schoolLeaveDates = []   // date labels of paid school-leave days, for the footer
       const tally = { present: 0, late: 0, half_day: 0, on_leave: 0, school_leave: 0, absent: 0 }
       let lateMins = 0, earlyMins = 0
       for (let d = new Date(monthStart + 'T00:00:00'); ; d.setDate(d.getDate() + 1)) {
@@ -284,10 +285,12 @@ export default function MonthlyReport() {
         lateMins += ad?.late_minutes || 0
         earlyMins += ad?.early_leave_minutes || 0
         const dd = String(d.getDate()).padStart(2, '0')
-        body.push([`${dd} ${d.toLocaleDateString('en-US', { month: 'short' })}`, dayName, status,
+        const dateLabel = `${dd} ${d.toLocaleDateString('en-US', { month: 'short' })}`
+        body.push([dateLabel, dayName, status,
           fmtT(ad?.in_time) || '—', fmtT(ad?.out_time) || '—',
           ad?.late_minutes || 0, ad?.early_leave_minutes || 0, ad?.notes || ''])
         kinds.push(kind)
+        if (kind === 'school_leave') schoolLeaveDates.push(dateLabel)
       }
       if (body.length === 0) throw new Error('No attendance days in this month yet.')
 
@@ -303,8 +306,8 @@ export default function MonthlyReport() {
       const GREEN = [26, 74, 46], GOLD = [201, 162, 39], GRAY = [120, 126, 120]
       const STATUS_COLOR = {
         present: [10, 125, 58], late: [165, 91, 0], half_day: [165, 91, 0],
-        on_leave: [30, 64, 175], absent: [139, 26, 26], unmarked: [139, 26, 26],
-        not_marked: [139, 26, 26], sunday: GRAY, holiday: GRAY,
+        on_leave: [30, 64, 175], school_leave: [13, 110, 120], absent: [139, 26, 26],
+        unmarked: [139, 26, 26], not_marked: [139, 26, 26], sunday: GRAY, holiday: GRAY,
       }
       const M = 14                               // page margin (mm)
       const doc = new jsPDF({ unit: 'mm', format: 'a4' })
@@ -383,22 +386,43 @@ export default function MonthlyReport() {
       })
 
       // ── Summary band ──
-      let y = doc.lastAutoTable.finalY + 7
+      // Two lines so it never runs past the page width, and school_leave is
+      // EXCLUDED from Absent (it's a paid day, not an absence).
       const ph = doc.internal.pageSize.getHeight()
-      if (y > ph - 46) { doc.addPage(); y = 24 }
+      const absent = Math.max(tally.absent, Math.max(0, stats.expected - (tally.present + tally.late + tally.half_day + tally.on_leave + tally.school_leave)))
+      const sumLine1 = `Expected ${stats.expected}     Present ${tally.present}     Late ${tally.late}     Half-day ${tally.half_day}     On leave ${tally.on_leave}     School leave ${tally.school_leave}     Absent ${absent}`
+      const sumLine2 = `Late ${lateMins} min     Early-out ${earlyMins} min`
+      const sumH = 20
+      let y = doc.lastAutoTable.finalY + 7
+      if (y > ph - (sumH + 8)) { doc.addPage(); y = 24 }
       doc.setFillColor(237, 243, 238)
-      doc.roundedRect(M, y, pageW - 2 * M, 13, 2, 2, 'F')
+      doc.roundedRect(M, y, pageW - 2 * M, sumH, 2, 2, 'F')
       doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...GRAY)
       doc.text('SUMMARY', M + 4, y + 5)
-      doc.setFont('helvetica', 'bold').setFontSize(9.5).setTextColor(...GREEN)
-      const absent = Math.max(tally.absent, Math.max(0, stats.expected - (tally.present + tally.late + tally.half_day + tally.on_leave)))
-      doc.text(
-        `Expected ${stats.expected}   ·   Present ${tally.present}   ·   Late ${tally.late}   ·   Half-day ${tally.half_day}   ·   On leave ${tally.on_leave}   ·   Absent ${absent}   ·   Late ${lateMins} min   ·   Early-out ${earlyMins} min`,
-        M + 4, y + 10.2,
-      )
+      doc.setFont('helvetica', 'bold').setFontSize(9).setTextColor(...GREEN)
+      doc.text(sumLine1, M + 4, y + 11)
+      doc.text(sumLine2, M + 4, y + 16.4)
+      y += sumH
+
+      // ── School-leave footer ──
+      // Paid, school-declared days off, called out so payroll never reads them
+      // as absences. Only shown when there are any; wraps if there are many.
+      if (schoolLeaveDates.length > 0) {
+        const slText = `School leave (paid) — counted as paid, not absent:   ${schoolLeaveDates.join(',   ')}`
+        doc.setFont('helvetica', 'normal').setFontSize(8.5)
+        const slLines = doc.splitTextToSize(slText, pageW - 2 * M - 8)
+        const slH = 5.5 + slLines.length * 4.4
+        y += 5
+        if (y > ph - (slH + 8)) { doc.addPage(); y = 24 }
+        doc.setFillColor(233, 242, 243)            // pale teal — matches the grid status colour
+        doc.roundedRect(M, y, pageW - 2 * M, slH, 2, 2, 'F')
+        doc.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(13, 110, 120)
+        slLines.forEach((ln, i) => doc.text(ln, M + 4, y + 5.6 + i * 4.4))
+        y += slH
+      }
 
       // ── Signatures ──
-      y += 30
+      y += 20
       if (y > ph - 24) { doc.addPage(); y = 40 }
       doc.setDrawColor(150, 150, 150).setLineWidth(0.3)
       doc.line(M, y, M + 55, y)
