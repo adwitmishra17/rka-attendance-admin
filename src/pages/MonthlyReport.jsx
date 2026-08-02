@@ -69,13 +69,6 @@ export default function MonthlyReport() {
           .eq('is_active', true)
         if (effectiveBranches.length > 0) empQ = empQ.overlaps('branch_codes', effectiveBranches)
 
-        // 2. Attendance rollup rows for the month, for those employees.
-        let adQ = supabase.from('attendance_daily')
-          .select('employee_id, date, status, in_time, out_time, late_minutes, early_leave_minutes')
-          .gte('date', monthStart)
-          .lt('date', monthEnd)
-        if (effectiveBranches.length > 0) adQ = adQ.in('branch_code', effectiveBranches)
-
         // 3. Holidays in the month, in scope.
         // holidays.branch_code is nullable: NULL means "applies to all branches".
         const holQ = supabase.from('holidays')
@@ -83,11 +76,29 @@ export default function MonthlyReport() {
           .gte('date', monthStart)
           .lt('date', monthEnd)
 
-        const [empRes, adRes, holRes] = await Promise.all([empQ, adQ, holQ])
+        const [empRes, holRes] = await Promise.all([empQ, holQ])
         if (cancelled) return
         if (empRes.error) throw empRes.error
-        if (adRes.error) throw adRes.error
         if (holRes.error) throw holRes.error
+
+        // 2. Attendance rollup rows for the month. PostgREST caps a single
+        // response at ~1000 rows, and a busy month across branches exceeds that,
+        // so page through with .range() — otherwise the tail of employees
+        // silently loses days and shows phantom absents. (The per-employee PDF
+        // fetches one person, far under the cap, which is why it stayed correct.)
+        const adData = []
+        for (let from = 0; ; from += 1000) {
+          let adQ = supabase.from('attendance_daily')
+            .select('employee_id, date, status, in_time, out_time, late_minutes, early_leave_minutes')
+            .gte('date', monthStart).lt('date', monthEnd)
+            .order('date', { ascending: true }).range(from, from + 999)
+          if (effectiveBranches.length > 0) adQ = adQ.in('branch_code', effectiveBranches)
+          const { data, error } = await adQ
+          if (error) throw error
+          adData.push(...(data || []))
+          if (!data || data.length < 1000) break
+        }
+        if (cancelled) return
 
         // Filter holidays to the in-scope branches client-side (NULL applies anywhere).
         const inScopeHolidays = (holRes.data || []).filter(h =>
@@ -101,8 +112,22 @@ export default function MonthlyReport() {
             .map(h => h.date)
         )
 
-        const workingDays = countWorkingDays(monthStart, monthEnd)
-        const expected = Math.max(0, workingDays - holidayDateSet.size)
+        // Expected working DATES (not a bare count): Mon–Sat in the month that
+        // aren't holidays and haven't-yet-elapsed (you can't be absent for a day
+        // that hasn't happened). Absent is derived per-date against these, so a
+        // Sunday or holiday can never land in the absent count, and a stray
+        // Sunday punch can't distort a working-day's tally.
+        const today = todayInKolkata()
+        const workDates = []
+        for (let d = new Date(monthStart + 'T00:00:00'), E = new Date(monthEnd + 'T00:00:00'); d < E; d.setDate(d.getDate() + 1)) {
+          const iso = d.toLocaleDateString('en-CA')
+          if (iso > today) break                  // future day — not yet expected
+          if (d.getDay() === 0) continue          // Sunday — weekly off
+          if (holidayDateSet.has(iso)) continue   // declared holiday
+          workDates.push(iso)
+        }
+        const workingDays = countWorkingDays(monthStart, monthEnd)  // full-month Mon–Sat, for the info card
+        const expected = workDates.length
 
         // Aggregate per employee. LEFT JOIN semantics: every employee shows up,
         // even those with zero punches in the month (zero present, zero late).
@@ -119,9 +144,10 @@ export default function MonthlyReport() {
             inOnly: 0,
             lateMins: 0,
             earlyMins: 0,
+            attended: new Set(),   // dates with any non-'absent' record — for date-based absent
           })
         }
-        for (const ad of adRes.data || []) {
+        for (const ad of adData) {
           const r = perEmp.get(ad.employee_id)
           if (!r) continue  // ad row for an employee outside scope, skip
           if (ad.status === 'present') r.present++
@@ -129,10 +155,17 @@ export default function MonthlyReport() {
           if (ad.in_time && !ad.out_time) r.inOnly++
           r.lateMins += ad.late_minutes || 0
           r.earlyMins += ad.early_leave_minutes || 0
+          // Any recorded status except an explicit 'absent' means the day is
+          // accounted for (present / late / half-day / leave / school-leave).
+          if (ad.status && ad.status !== 'absent') r.attended.add(ad.date)
         }
 
+        // Absent = scheduled working dates the employee has no record for.
         const result = Array.from(perEmp.values())
-          .map(r => ({ ...r, absent: Math.max(0, r.expected - r.present - r.school_leave) }))
+          .map(r => {
+            const absent = workDates.reduce((n, d) => n + (r.attended.has(d) ? 0 : 1), 0)
+            return { ...r, absent }
+          })
           .sort((a, b) => (a.branch || '').localeCompare(b.branch || '') || a.name.localeCompare(b.name))
 
         if (!cancelled) {
@@ -561,7 +594,7 @@ export default function MonthlyReport() {
       </div>
 
       <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 16, lineHeight: 1.5 }}>
-        Note: assumes a 6-day work week (Sundays only weekly off). "Absent" treats any non-present day as absent, including approved leave — leave reconciliation arrives with the Leave module. Late/early-out minutes are 0 until shift expectations are configured.
+        Note: assumes a 6-day work week (Sundays are the weekly off). "Absent" counts only scheduled working days — Mon–Sat, excluding holidays and days not yet elapsed — that have no attendance record; Sundays and holidays are never counted, and leave / school-leave days count as accounted. Late/early-out minutes are 0 until shift expectations are configured.
       </p>
     </div>
   )
