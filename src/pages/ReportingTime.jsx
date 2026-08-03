@@ -3,6 +3,7 @@ import { supabase, supabaseAdmin } from '../lib/supabase'
 import { useAuth } from '../App'
 import { useToast } from '../components/Toast'
 import { BRANCHES, branchLabel } from '../lib/branch'
+import { listDepartmentReportingTime, saveDepartmentReportingTime } from '../lib/reportingTimeDepartments'
 
 // ============================================================================
 // REPORTING TIME PAGE
@@ -39,6 +40,13 @@ export default function ReportingTime() {
   const [form, setForm] = useState(DEFAULT_FORM)
   const [original, setOriginal] = useState(null)
 
+  // Department overrides (per branch) — the layer between branch default and
+  // per-employee custom timing.
+  const [deptRows, setDeptRows] = useState([])
+  const [deptOriginal, setDeptOriginal] = useState([])
+  const [deptLoading, setDeptLoading] = useState(false)
+  const [deptSavingId, setDeptSavingId] = useState(null)
+
   // The branch we're currently editing config for. Driven by currentBranch
   // when set; null means "show pick-a-branch UI".
   const editBranch = currentBranch
@@ -74,8 +82,43 @@ export default function ReportingTime() {
 
   useEffect(() => { load() }, [editBranch])
 
+  // Load department overrides for the branch being edited.
+  useEffect(() => {
+    if (!editBranch) { setDeptRows([]); setDeptOriginal([]); return }
+    let cancelled = false
+    setDeptLoading(true)
+    listDepartmentReportingTime(editBranch)
+      .then(rows => { if (!cancelled) { setDeptRows(rows); setDeptOriginal(rows.map(r => ({ ...r }))) } })
+      .catch(e => { if (!cancelled) toast.show('Could not load department overrides: ' + e.message, 'error') })
+      .finally(() => { if (!cancelled) setDeptLoading(false) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editBranch])
+
   function update(k, v) {
     setForm(f => ({ ...f, [k]: v }))
+  }
+
+  function updateDept(deptId, k, v) {
+    setDeptRows(rows => rows.map(r => r.department_id === deptId ? { ...r, [k]: v } : r))
+  }
+  function deptDirty(row) {
+    const orig = deptOriginal.find(o => o.department_id === row.department_id)
+    return orig && JSON.stringify(row) !== JSON.stringify(orig)
+  }
+  async function saveDept(row) {
+    setDeptSavingId(row.department_id)
+    try {
+      const result = await saveDepartmentReportingTime(editBranch, row, user?.email)
+      const saved = { ...row, hasOverride: result === 'saved' }
+      setDeptRows(rows => rows.map(r => r.department_id === row.department_id ? saved : r))
+      setDeptOriginal(orig => orig.map(o => o.department_id === row.department_id ? { ...saved } : o))
+      toast.show(result === 'cleared' ? `${row.name} reverted to branch default` : `${row.name} timing saved`)
+    } catch (e) {
+      toast.show('Save failed: ' + e.message, 'error')
+    } finally {
+      setDeptSavingId(null)
+    }
   }
 
   const isDirty = original && JSON.stringify(form) !== JSON.stringify(original)
@@ -317,6 +360,97 @@ export default function ReportingTime() {
             </div>
           </div>
 
+          {/* Department overrides card */}
+          <div style={{
+            background: 'var(--white)',
+            border: '1px solid var(--gray-200)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '22px 24px',
+            marginBottom: 16,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--gold-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold-dark)" strokeWidth="2">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Department overrides</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                  Set different timings for a department. Blank fields inherit the branch default
+                  (In {form.default_in_time} · Out {form.default_out_time} · Grace {form.default_grace_minutes}m).
+                </div>
+              </div>
+            </div>
+
+            {deptLoading ? (
+              <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>Loading departments…</div>
+            ) : deptRows.length === 0 ? (
+              <div style={{ padding: 20, textAlign: 'center', fontSize: 12.5, color: 'var(--text-muted)' }}>
+                No departments defined. Add them under <strong>Departments</strong> first.
+              </div>
+            ) : deptRows.map(row => {
+              const busy = deptSavingId === row.department_id
+              return (
+                <div key={row.department_id} style={{ padding: '14px 0', borderTop: '1px solid var(--gray-100)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{row.name}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{row.employees} at {branchLabel(editBranch)}</span>
+                      {row.hasOverride && (
+                        <span style={{ fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--gold-dark)', background: 'var(--gold-light)', padding: '2px 6px', borderRadius: 4 }}>override</span>
+                      )}
+                    </div>
+                    {deptDirty(row) && (
+                      <button onClick={() => saveDept(row)} disabled={busy} style={{ ...btnPrimary, padding: '6px 14px', fontSize: 12 }}>
+                        {busy ? 'Saving…' : 'Save'}
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 10 }}>
+                    <Field label="In time" hint="blank = default">
+                      <input type="time" value={row.in_time} onChange={e => updateDept(row.department_id, 'in_time', e.target.value)} style={inputStyle} />
+                    </Field>
+                    <Field label="Out time" hint="blank = default">
+                      <input type="time" value={row.out_time} onChange={e => updateDept(row.department_id, 'out_time', e.target.value)} style={inputStyle} />
+                    </Field>
+                    <Field label="Grace" hint="blank = default">
+                      <input type="number" min="0" max="60" placeholder={String(form.default_grace_minutes)}
+                        value={row.grace_minutes} onChange={e => updateDept(row.department_id, 'grace_minutes', e.target.value === '' ? '' : e.target.value)} style={inputStyle} />
+                    </Field>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Applies to</span>
+                    <div style={{ display: 'inline-flex', border: '1px solid var(--gray-200)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                      {[
+                        { v: false, label: 'All except custom-timing staff' },
+                        { v: true, label: 'All employees in the department' },
+                      ].map(opt => {
+                        const active = !!row.override_custom === opt.v
+                        return (
+                          <button key={String(opt.v)} onClick={() => updateDept(row.department_id, 'override_custom', opt.v)}
+                            style={{
+                              padding: '6px 12px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11.5,
+                              fontWeight: active ? 600 : 500,
+                              background: active ? 'var(--green)' : 'transparent',
+                              color: active ? 'white' : 'var(--text-muted)',
+                            }}>
+                            {opt.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <span style={{ fontSize: 10.5, color: 'var(--gray-400)' }}>
+                      {row.override_custom
+                        ? 'Every employee here uses this timing, even those with their own custom timing.'
+                        : 'Staff with their own custom timing keep it; everyone else uses this.'}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
           {/* Sundays card */}
           <div style={{
             background: 'var(--white)',
@@ -350,7 +484,7 @@ export default function ReportingTime() {
           }}>
             <strong style={{ color: 'var(--text)' }}>How changes apply:</strong> saved timings affect <strong>new punches from now on</strong>. Each attendance record snapshots the schedule that was in effect on the day it was recorded, so historical late / early-leave counts stay accurate when you change policy mid-period. To retroactively apply a change to past dates, edit those days individually under the teacher's Attendance tab.
             <br /><br />
-            <strong style={{ color: 'var(--text)' }}>Per-teacher overrides:</strong> custom timings for part-time / KG staff live on each teacher's profile under "Custom timing" — they override the branch default for that person only.
+            <strong style={{ color: 'var(--text)' }}>How timings stack:</strong> per-employee <em>Custom timing</em> (on the profile) wins, then the <em>Department override</em> above, then this <em>Branch default</em> — unless a department is set to "All employees", which forces its timing on everyone in it. Grace, in and out each inherit the branch default when left blank.
           </div>
 
           {/* Save bar */}
