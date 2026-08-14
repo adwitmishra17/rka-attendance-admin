@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth } from '../App'
-import { supabase } from '../lib/supabase'
-import { applyBranchFilterArray, applyBranchFilterNullable } from '../lib/branchQuery'
+import { supabase, supabaseAdmin } from '../lib/supabase'
+import { applyBranchFilter, applyBranchFilterArray, applyBranchFilterNullable } from '../lib/branchQuery'
 import { BRANCHES, branchLabel } from '../lib/branch'
 import FleetExpiryWidget from '../components/FleetExpiryWidget'
 // Document expiry widget stays off the dashboard (2026-07-26, user request);
@@ -177,11 +177,148 @@ export default function Dashboard() {
         <StatCard label="Today's attendance" value={attendanceValue} hint={attendanceHint} />
       </div>
 
+      {/* Non-exempt employees who aren't present today. */}
+      <AbsentTodayPanel effectiveBranches={effectiveBranches} />
+
       {/* Per-device biometric kiosk status — one card per branch in scope;
           "All Branches" shows both devices. */}
       <KioskStatusPanel effectiveBranches={effectiveBranches} />
 
       <FleetExpiryWidget />
+    </div>
+  )
+}
+
+// ============================================================================
+// Absent today — non-exempt employees who are not present for the day.
+//
+// Mirrors the Attendance page's status logic so the two never disagree:
+//   · roster = attendance_counted_employees (active AND not attendance-exempt),
+//     so exempt staff can never appear here.
+//   · a holiday that applies to the employee (global NULL row, or one matching
+//     any of their branches) removes them — a holiday isn't an absence.
+//   · "absent" = an explicit attendance_daily.status = 'absent' row, OR — for
+//     today — no punch yet ('Not marked'). Present / late / half-day / on-leave
+//     / school-leave are all excluded.
+// Reads via supabaseAdmin (employee names are anon-restricted, migration 021) —
+// the same client the Attendance page uses; falls back to the public client.
+// ============================================================================
+function AbsentTodayPanel({ effectiveBranches }) {
+  const [rows, setRows] = useState(null)   // null = loading
+  const [err, setErr] = useState(null)
+  const db = supabaseAdmin || supabase
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const today = todayInKolkata()
+
+        let rosterQ = db.from('attendance_counted_employees')
+          .select('id, full_name, employee_code, branch_codes')
+          .order('full_name', { ascending: true })
+        rosterQ = applyBranchFilterArray(rosterQ, effectiveBranches)
+
+        let dailyQ = db.from('attendance_daily')
+          .select('employee_id, status')
+          .eq('date', today)
+        dailyQ = applyBranchFilter(dailyQ, effectiveBranches)
+
+        let holQ = supabase.from('holidays').select('branch_code').eq('date', today)
+        holQ = applyBranchFilterNullable(holQ, effectiveBranches)
+
+        const [rosterRes, dailyRes, holRes] = await Promise.all([rosterQ, dailyQ, holQ])
+        if (cancelled) return
+        if (rosterRes.error) throw rosterRes.error
+        if (dailyRes.error) throw dailyRes.error
+        if (holRes.error) throw holRes.error
+
+        const dailyByEmp = new Map((dailyRes.data || []).map(d => [d.employee_id, d]))
+        const holidays = holRes.data || []
+        const holidayApplies = (emp) => {
+          if (!holidays.length) return false
+          if (holidays.some(h => h.branch_code === null)) return true
+          const b = Array.isArray(emp.branch_codes) ? emp.branch_codes : []
+          return holidays.some(h => b.includes(h.branch_code))
+        }
+
+        const absentees = []
+        for (const e of rosterRes.data || []) {
+          if (holidayApplies(e)) continue
+          const daily = dailyByEmp.get(e.id)
+          const status = daily ? (daily.status || 'present') : 'not_marked'
+          if (status === 'absent' || status === 'not_marked') absentees.push({ ...e, status })
+        }
+        setRows(absentees)
+        setErr(null)
+      } catch (e) {
+        if (!cancelled) setErr(e.message)
+      }
+    }
+    load()
+    // Same cadence as the rest of the dashboard: 30s poll + realtime nudge so a
+    // name drops off the moment that employee punches in.
+    const interval = setInterval(load, 30_000)
+    let rtTimer = null
+    const channel = supabase
+      .channel('dashboard-absent-live')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'attendance_events' },
+        () => { if (rtTimer) return; rtTimer = setTimeout(() => { rtTimer = null; load() }, 800) })
+      .subscribe()
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+      if (rtTimer) clearTimeout(rtTimer)
+      supabase.removeChannel(channel)
+    }
+    // db is derived from a module-level client and is stable across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveBranches])
+
+  const count = rows?.length ?? null
+
+  return (
+    <div style={{ background: 'var(--white)', border: '1px solid var(--gray-200)', borderRadius: 'var(--radius-lg)', padding: '20px 24px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+          Absent today
+        </div>
+        {count != null && count > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 9px', borderRadius: 999, background: 'var(--crimson-light)', color: 'var(--crimson)' }}>{count}</span>
+        )}
+        <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-muted)' }}>Non-exempt staff · updates live</span>
+      </div>
+      {err ? (
+        <div style={{ fontSize: 12, color: 'var(--crimson)' }}>Couldn’t load absentees: {err}</div>
+      ) : rows == null ? (
+        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading…</div>
+      ) : rows.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Everyone’s accounted for — no absentees today.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 340, overflowY: 'auto' }}>
+          {rows.map((r, i) => (
+            <AbsentRow key={r.id} emp={r} isLast={i === rows.length - 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AbsentRow({ emp, isLast }) {
+  const chip = emp.status === 'absent'
+    ? { bg: 'var(--crimson-light)', color: 'var(--crimson)', label: 'Absent' }
+    : { bg: 'var(--gray-100)', color: 'var(--text-muted)', label: 'Not marked' }
+  const initials = (emp.full_name || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 2px', borderBottom: isLast ? 'none' : '1px solid var(--gray-100)' }}>
+      <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--gray-200)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>{initials}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.full_name}</div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{emp.employee_code}</div>
+      </div>
+      <span style={{ padding: '3px 9px', background: chip.bg, color: chip.color, borderRadius: 999, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>{chip.label}</span>
     </div>
   )
 }
