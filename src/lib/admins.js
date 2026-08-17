@@ -48,7 +48,12 @@ import { SUPER_ADMIN_EMAIL } from '../App'
 
 const ROLES = ['admin', 'receptionist']
 export const BRANCHES = ['MAIN', 'CITY']
-export const MODULES = ['tracker', 'hrms', 'sms']
+export const MODULES = ['tracker', 'hrms', 'sms', 'social']
+
+// NOTE: 'social' is deliberately absent from DEFAULT_MODULES. This list is
+// the fallback for legacy docs that predate the `modules` field, so adding
+// 'social' here would silently grant every existing admin the ability to
+// post publicly as the school. Social access must always be explicit.
 export const DEFAULT_MODULES = ['tracker', 'hrms', 'sms']
 
 // Per-platform access LEVELS (the extended permissions model). A user's
@@ -58,10 +63,13 @@ export const DEFAULT_MODULES = ['tracker', 'hrms', 'sms']
 //   sms:     super_admin (all branches) | admin (branch) | cashier (fees only)
 // Legacy fields (role + modules[]) are STILL WRITTEN, derived from this
 // map, so the Academic Tracker and older readers keep working unchanged.
+//   social:  admin (connect pages, manage access) | approver (approve/publish)
+//            | author (draft only)
 export const MODULE_ROLES = {
   tracker: ['admin'],
   hrms: ['admin', 'receptionist'],
   sms: ['super_admin', 'admin', 'cashier'],
+  social: ['admin', 'approver', 'author'],
 }
 
 export function normaliseModuleRoles(input) {
@@ -92,10 +100,19 @@ export function adminModuleRoles(adminDoc) {
     tracker: mods.includes('tracker') ? 'admin' : null,
     hrms: mods.includes('hrms') ? (legacyRole === 'receptionist' ? 'receptionist' : 'admin') : null,
     sms: mods.includes('sms') ? (legacyRole === 'super_admin' ? 'super_admin' : 'admin') : null,
+    // No legacy derivation for social: a doc written before social existed
+    // never granted it, and DEFAULT_MODULES omits it, so this stays null
+    // unless someone was explicitly given access.
+    social: mods.includes('social') ? 'author' : null,
   }
 }
 
 // Derive the legacy (role, modules[]) pair a moduleRoles map represents.
+//
+// `social` is intentionally left out of the receptionist test: giving a front
+// desk person permission to draft posts should not silently promote them to
+// legacy role 'admin' and hand them full HRMS. Social access is read from
+// moduleRoles.social, never from the legacy role.
 function legacyFromModuleRoles(mr) {
   const modules = MODULES.filter(m => mr[m])
   const role = (mr.hrms === 'receptionist' && !mr.tracker && !mr.sms) ? 'receptionist' : 'admin'

@@ -54,17 +54,27 @@ const LEVELS = {
     { value: 'admin',       label: 'Branch admin — full SMS, own branch' },
     { value: 'cashier',     label: 'Cashier — fees, students & reports only' },
   ],
+  social: [
+    { value: '',         label: 'No access' },
+    { value: 'admin',    label: 'Admin — connect pages & manage access' },
+    { value: 'approver', label: 'Approver — approve and publish posts' },
+    { value: 'author',   label: 'Author — draft posts only' },
+  ],
 }
 const LEVEL_BADGE = {
   admin: 'Admin', receptionist: 'Front desk',
   super_admin: 'Super', cashier: 'Cashier',
+  approver: 'Approver', author: 'Author',
 }
-const DEFAULT_MODULE_ROLES = { tracker: 'admin', hrms: 'admin', sms: 'admin' }
+// Social defaults to no access. Anyone granted it can post publicly in the
+// school's name, so it should never be handed out just by opening the form.
+const DEFAULT_MODULE_ROLES = { tracker: 'admin', hrms: 'admin', sms: 'admin', social: '' }
 
 const MODULE_INFO = [
   { value: 'tracker', label: 'Academic Tracker', desc: 'Lessons, tests, syllabus' },
   { value: 'hrms',    label: 'HRMS Portal',      desc: 'Employees, attendance, walk-ins' },
   { value: 'sms',     label: 'Student Mgmt',     desc: 'Students, admissions, fees' },
+  { value: 'social',  label: 'Social Media',     desc: 'Facebook, Instagram, X, LinkedIn, YouTube' },
 ]
 
 export default function AdminUsers() {
@@ -151,7 +161,7 @@ export default function AdminUsers() {
     const existingBranches = adminBranches(a)
     setEditBranches(existingBranches.length > 0 ? existingBranches : ['MAIN'])
     const mr = adminModuleRoles(a)
-    setEditModuleRoles({ tracker: mr.tracker || '', hrms: mr.hrms || '', sms: mr.sms || '' })
+    setEditModuleRoles({ tracker: mr.tracker || '', hrms: mr.hrms || '', sms: mr.sms || '', social: mr.social || '' })
     setEditError('')
   }
 
@@ -631,7 +641,9 @@ function PlatformAccessPicker({ value, onChange, disabled }) {
       ))}
       <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>
         Grant at least one platform. SMS cashier and branch admin are scoped to the
-        selected branch; SMS super admin sees every branch.
+        selected branch; SMS super admin sees every branch. Social access lets a
+        person post publicly as the school — an author can only draft, and nothing
+        reaches a page until an approver clears it.
       </p>
     </div>
   )
@@ -648,7 +660,8 @@ function ModuleChips({ admin }) {
     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
       {granted.map(m => {
         const level = mr[m.value]
-        const short = m.label.replace(' Portal', '').replace('Academic ', '').replace('Student Mgmt', 'SMS')
+        const short = m.label.replace(' Portal', '').replace('Academic ', '')
+          .replace('Student Mgmt', 'SMS').replace('Social Media', 'Social')
         return (
           <span key={m.value} style={modChip(level === 'super_admin' ? 'var(--green-light)' : 'var(--gray-50)', level === 'super_admin' ? 'var(--green-dark)' : 'var(--text)')}>
             {short}: {LEVEL_BADGE[level] || level}
