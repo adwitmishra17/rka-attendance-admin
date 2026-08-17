@@ -9,6 +9,7 @@ import {
   DOCUMENT_CATEGORIES,
   getCategoryMeta,
 } from '../lib/documents'
+import { actorId } from '../lib/actor'
 
 // ============================================================================
 // DOCUMENTS TAB — for the Employee Profile page
@@ -57,7 +58,7 @@ export default function DocumentsTab({ employee }) {
 
   async function handleDownload(doc) {
     try {
-      await downloadDocument(doc.id, user.email)
+      await downloadDocument(doc.id, actorId(user))
       toast.show('Download started')
     } catch (e) {
       toast.show('Download failed: ' + e.message, 'error')
@@ -70,7 +71,7 @@ export default function DocumentsTab({ employee }) {
       await deleteDocument({
         documentId: deleting.id,
         employeeId: employee.id,
-        deletedByEmail: user.email,
+        deletedByEmail: actorId(user),
       })
       toast.show('Document deleted')
       setDeleting(null)
@@ -138,7 +139,7 @@ export default function DocumentsTab({ employee }) {
       {uploadOpen && (
         <UploadModal
           employee={employee}
-          uploadedByEmail={user.email}
+          uploadedByEmail={actorId(user)}
           onClose={() => setUploadOpen(false)}
           onUploaded={() => { setUploadOpen(false); reload() }}
         />

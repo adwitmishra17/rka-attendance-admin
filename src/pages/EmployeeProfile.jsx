@@ -5,6 +5,7 @@ import { useAuth } from '../App'
 import { useToast } from '../components/Toast'
 import { validateProfileForm, normaliseProfileForm } from '../lib/validators'
 import { logProfileUpdate, logSensitiveReveal } from '../lib/auditLog'
+import { actorId } from '../lib/actor'
 import { uploadProfilePhoto } from '../lib/profilePhoto'
 import { listDepartments } from '../lib/departments'
 import { applyBranchFilterArray, isAccessibleArray } from '../lib/branchQuery'
@@ -170,14 +171,14 @@ export default function EmployeeProfile() {
 
   async function reveal(fieldName) {
     if (revealed.has(fieldName)) return
-    if (!user?.email) {
+    if (!user) {
       toast.show('Could not record reveal — not logged in', 'error')
       return
     }
     const result = await logSensitiveReveal({
       employeeId: id,
       fieldName,
-      changedByEmail: user.email,
+      changedByEmail: actorId(user),
     })
     if (!result.ok) {
       toast.show('Reveal failed: ' + (result.error || 'unknown'), 'error')
@@ -189,7 +190,7 @@ export default function EmployeeProfile() {
   async function handlePhotoSelected(e) {
     const file = e.target.files?.[0]
     if (!file) return
-    if (!user?.email) {
+    if (!user) {
       toast.show('Cannot upload — not logged in', 'error')
       return
     }
@@ -198,7 +199,7 @@ export default function EmployeeProfile() {
       const { employee: updated } = await uploadProfilePhoto({
         file,
         employeeId: id,
-        uploadedByEmail: user.email,
+        uploadedByEmail: actorId(user),
       })
       setEmployee(updated)
       toast.show('Photo updated')
@@ -230,7 +231,7 @@ export default function EmployeeProfile() {
         // Defensive: ensure branch_codes survives even if normaliseProfileForm
         // strips unknown fields. This keeps the column current with the form.
         branch_codes: branchCodes,
-        updated_by: user?.email || null,
+        updated_by: actorId(user),
         updated_at: new Date().toISOString(),
       }
 
@@ -243,8 +244,8 @@ export default function EmployeeProfile() {
       if (nowExempt) {
         payload.attendance_exempt_reason = form.attendance_exempt_reason?.trim() || null
         payload.attendance_exempt_by = wasExempt
-          ? (employee.attendance_exempt_by || user?.email || null)
-          : (user?.email || null)
+          ? (employee.attendance_exempt_by || actorId(user))
+          : actorId(user)
         payload.attendance_exempt_at = wasExempt
           ? (employee.attendance_exempt_at || new Date().toISOString())
           : new Date().toISOString()
@@ -272,7 +273,7 @@ export default function EmployeeProfile() {
         employeeId: id,
         oldEmployee: employee,
         newEmployee: updated,
-        changedByEmail: user?.email || 'unknown',
+        changedByEmail: actorId(user) || 'unknown',
       })
       if (!auditResult.ok) {
         console.warn('Audit log skipped:', auditResult.error)
