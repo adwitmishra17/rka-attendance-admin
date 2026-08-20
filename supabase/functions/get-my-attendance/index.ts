@@ -129,7 +129,7 @@ Deno.serve(async (req) => {
 
     const { data: emp, error: empErr } = await supabase
       .from("employees")
-      .select("id, full_name, biometric_code, branch_codes, is_active")
+      .select("id, full_name, biometric_code, branch_codes, is_active, department_id, custom_in_time, custom_out_time, custom_grace_minutes")
       .eq("personal_email", email)
       .maybeSingle();
 
@@ -178,6 +178,60 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "db_error", message: eventsErr.message }, 500);
     }
 
+    // 5. Per-day summary rows for the same window — attendance_daily carries
+    //    the RESOLVED expected reporting time snapshotted per day
+    //    (custom → department → branch, by recompute_attendance_daily),
+    //    plus late/early minutes and holiday flags.
+    const fromDay = fromDate.toISOString().slice(0, 10);
+    const toDay = toDate.toISOString().slice(0, 10);
+    const { data: daily, error: dailyErr } = await supabase
+      .from("attendance_daily")
+      .select("date, in_time, out_time, expected_in_time, expected_out_time, grace_minutes, late_minutes, early_leave_minutes, status, is_holiday, branch_code")
+      .eq("employee_id", emp.id)
+      .gte("date", fromDay)
+      .lte("date", toDay)
+      .order("date", { ascending: true });
+    if (dailyErr) {
+      console.error("attendance_daily query error:", dailyErr);
+      // daily summary is an enrichment — events alone still render a page
+    }
+
+    // 6. The employee's reporting time AS CONFIGURED TODAY, resolved with the
+    //    same precedence recompute_attendance_daily uses:
+    //    department override_custom → dept wins; else custom → dept → branch.
+    let reporting: Record<string, unknown> | null = null;
+    try {
+      const homeBranch = (emp.branch_codes ?? [])[0] ?? null;
+      const [{ data: rtc }, { data: dtc }] = await Promise.all([
+        homeBranch
+          ? supabase.from("reporting_time_config")
+              .select("default_in_time, default_out_time, default_grace_minutes")
+              .eq("branch_code", homeBranch).maybeSingle()
+          : Promise.resolve({ data: null }),
+        homeBranch && emp.department_id
+          ? supabase.from("reporting_time_department_config")
+              .select("in_time, out_time, grace_minutes, override_custom")
+              .eq("branch_code", homeBranch).eq("department_id", emp.department_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+      const deptWins = Boolean(dtc?.override_custom);
+      reporting = {
+        in_time: deptWins
+          ? (dtc?.in_time ?? rtc?.default_in_time ?? null)
+          : (emp.custom_in_time ?? dtc?.in_time ?? rtc?.default_in_time ?? null),
+        out_time: deptWins
+          ? (dtc?.out_time ?? rtc?.default_out_time ?? null)
+          : (emp.custom_out_time ?? dtc?.out_time ?? rtc?.default_out_time ?? null),
+        grace_minutes: deptWins
+          ? (dtc?.grace_minutes ?? rtc?.default_grace_minutes ?? null)
+          : (emp.custom_grace_minutes ?? dtc?.grace_minutes ?? rtc?.default_grace_minutes ?? null),
+        source: deptWins ? "department" : (emp.custom_in_time ? "custom" : (dtc?.in_time ? "department" : "branch")),
+        branch_code: homeBranch,
+      };
+    } catch (e) {
+      console.warn("reporting-time resolve failed:", e);
+    }
+
     return jsonResponse({
       employee: {
         id: emp.id,
@@ -187,6 +241,8 @@ Deno.serve(async (req) => {
       },
       range: { from: fromDate.toISOString(), to: toDate.toISOString() },
       events: events ?? [],
+      daily: daily ?? [],
+      reporting,
     });
   } catch (err) {
     console.error("Unhandled error in get-my-attendance:", err);
