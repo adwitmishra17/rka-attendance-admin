@@ -121,6 +121,84 @@ export default function ReportingTime() {
     }
   }
 
+  // ── Special days: per-DATE override (fog delay, event day). Top precedence
+  //    for that date; saving/removing recomputes that day for every employee.
+  const EMPTY_DAY = { date: '', in_time: '', out_time: '', grace_minutes: '', note: '' }
+  const [dayRows, setDayRows] = useState([])
+  const [dayLoading, setDayLoading] = useState(false)
+  const [dayForm, setDayForm] = useState(EMPTY_DAY)
+  const [dayBusy, setDayBusy] = useState(false)
+
+  async function loadDays() {
+    if (!editBranch) { setDayRows([]); return }
+    setDayLoading(true)
+    const { data, error } = await supabase
+      .from('reporting_time_day_overrides')
+      .select('*')
+      .eq('branch_code', editBranch)
+      .order('date', { ascending: false })
+      .limit(30)
+    if (error) toast.show('Could not load special days: ' + error.message, 'error')
+    setDayRows(data ?? [])
+    setDayLoading(false)
+  }
+  useEffect(() => { loadDays() }, [editBranch])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function recomputeDay(date) {
+    const { data, error } = await supabase
+      .rpc('recompute_attendance_day', { p_branch_code: editBranch, p_date: date })
+    if (error) throw new Error('recalculation failed: ' + error.message)
+    return data ?? 0
+  }
+
+  async function saveDayOverride() {
+    if (!supabaseAdmin) { toast.show('Admin client not configured', 'error'); return }
+    if (!dayForm.date) { toast.show('Pick a date', 'error'); return }
+    if (!dayForm.in_time && !dayForm.out_time && dayForm.grace_minutes === '') {
+      toast.show('Set at least one of in time, out time or grace', 'error'); return
+    }
+    if (dayForm.in_time && dayForm.out_time && dayForm.in_time >= dayForm.out_time) {
+      toast.show('Out time must be after In time', 'error'); return
+    }
+    setDayBusy(true)
+    try {
+      const { error } = await supabaseAdmin
+        .from('reporting_time_day_overrides')
+        .upsert({
+          branch_code: editBranch,
+          date: dayForm.date,
+          in_time: dayForm.in_time || null,
+          out_time: dayForm.out_time || null,
+          grace_minutes: dayForm.grace_minutes === '' ? null : Number(dayForm.grace_minutes),
+          note: dayForm.note?.trim() || null,
+          updated_by: user?.email,
+        }, { onConflict: 'branch_code,date' })
+      if (error) throw error
+      const n = await recomputeDay(dayForm.date)
+      toast.show(`Special timing saved — ${n} employee${n === 1 ? '' : 's'} recalculated for ${dayForm.date}`)
+      setDayForm(EMPTY_DAY)
+      loadDays()
+    } catch (e) {
+      toast.show('Save failed: ' + e.message, 'error')
+    } finally { setDayBusy(false) }
+  }
+
+  async function removeDayOverride(row) {
+    if (!supabaseAdmin) { toast.show('Admin client not configured', 'error'); return }
+    if (!window.confirm(`Remove the special timing for ${row.date}? Employee times for that day will be recalculated back to the normal schedule.`)) return
+    setDayBusy(true)
+    try {
+      const { error } = await supabaseAdmin
+        .from('reporting_time_day_overrides').delete().eq('id', row.id)
+      if (error) throw error
+      const n = await recomputeDay(row.date)
+      toast.show(`Removed — ${n} employee${n === 1 ? '' : 's'} recalculated for ${row.date}`)
+      loadDays()
+    } catch (e) {
+      toast.show('Remove failed: ' + e.message, 'error')
+    } finally { setDayBusy(false) }
+  }
+
   const isDirty = original && JSON.stringify(form) !== JSON.stringify(original)
 
   async function handleSave() {
@@ -471,6 +549,100 @@ export default function ReportingTime() {
             <Switch on={form.sunday_closed} onChange={v => update('sunday_closed', v)} />
           </div>
 
+          {/* Special days card */}
+          <div style={{
+            background: 'var(--white)',
+            border: '1px solid var(--gray-200)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '22px 24px',
+            marginBottom: 16,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: '#e6f1fb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#185fa5" strokeWidth="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M12 14v4"/><path d="M10 16h4"/>
+                </svg>
+              </div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Special days</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                  Change the reporting time for ONE date (fog delay, event day) — it applies to every employee,
+                  custom timings included, and that day&apos;s late marks are recalculated immediately. Blank fields
+                  keep the normal schedule.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 0.8fr 1.4fr auto', gap: 10, alignItems: 'end', marginTop: 12 }}>
+              <Field label="Date" hint="The special day">
+                <input type="date" value={dayForm.date}
+                  onChange={e => setDayForm(f => ({ ...f, date: e.target.value }))}
+                  style={inputStyle} />
+              </Field>
+              <Field label="In time" hint="That day only">
+                <input type="time" value={dayForm.in_time}
+                  onChange={e => setDayForm(f => ({ ...f, in_time: e.target.value }))}
+                  style={inputStyle} />
+              </Field>
+              <Field label="Out time" hint="Optional">
+                <input type="time" value={dayForm.out_time}
+                  onChange={e => setDayForm(f => ({ ...f, out_time: e.target.value }))}
+                  style={inputStyle} />
+              </Field>
+              <Field label="Grace" hint="Minutes">
+                <input type="number" min="0" max="120" value={dayForm.grace_minutes}
+                  onChange={e => setDayForm(f => ({ ...f, grace_minutes: e.target.value }))}
+                  style={inputStyle} placeholder="—" />
+              </Field>
+              <Field label="Note" hint="Why (optional)">
+                <input type="text" value={dayForm.note}
+                  onChange={e => setDayForm(f => ({ ...f, note: e.target.value }))}
+                  style={inputStyle} placeholder="Dense fog — delayed opening" />
+              </Field>
+              <button onClick={saveDayOverride} disabled={dayBusy}
+                style={{
+                  padding: '10px 18px', borderRadius: 'var(--radius-md)', border: 'none',
+                  background: dayBusy ? 'var(--gray-200)' : 'var(--green)',
+                  color: dayBusy ? 'var(--gray-400)' : '#fff',
+                  fontSize: 13, fontWeight: 600, cursor: dayBusy ? 'default' : 'pointer', height: 40,
+                }}>
+                {dayBusy ? 'Working…' : 'Save & recalculate'}
+              </button>
+            </div>
+
+            {dayLoading ? (
+              <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>Loading…</div>
+            ) : dayRows.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                {dayRows.map(row => (
+                  <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: '1px solid var(--gray-100)' }}>
+                    <div style={{ minWidth: 108, fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{row.date}</div>
+                    <div style={{ flex: 1, fontSize: 12.5, color: 'var(--text-muted)' }}>
+                      {row.in_time ? `In ${row.in_time.slice(0, 5)}` : 'In —'}
+                      {' · '}{row.out_time ? `Out ${row.out_time.slice(0, 5)}` : 'Out —'}
+                      {' · '}{row.grace_minutes != null ? `Grace ${row.grace_minutes}m` : 'Grace —'}
+                      {row.note ? <span style={{ fontStyle: 'italic' }}> · {row.note}</span> : null}
+                    </div>
+                    <button onClick={() => setDayForm({
+                      date: row.date,
+                      in_time: row.in_time ? row.in_time.slice(0, 5) : '',
+                      out_time: row.out_time ? row.out_time.slice(0, 5) : '',
+                      grace_minutes: row.grace_minutes ?? '',
+                      note: row.note ?? '',
+                    })} disabled={dayBusy}
+                      style={{ background: 'none', border: '1px solid var(--gray-200)', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 600, color: 'var(--green-dark)', cursor: 'pointer' }}>
+                      Edit
+                    </button>
+                    <button onClick={() => removeDayOverride(row)} disabled={dayBusy}
+                      style={{ background: 'none', border: '1px solid #f0d5d5', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 600, color: '#8b1a1a', cursor: 'pointer' }}>
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Snapshot semantics explainer */}
           <div style={{
             padding: '14px 18px',
@@ -482,7 +654,7 @@ export default function ReportingTime() {
             lineHeight: 1.6,
             marginBottom: 16,
           }}>
-            <strong style={{ color: 'var(--text)' }}>How changes apply:</strong> saved timings affect <strong>new punches from now on</strong>. Each attendance record snapshots the schedule that was in effect on the day it was recorded, so historical late / early-leave counts stay accurate when you change policy mid-period. To retroactively apply a change to past dates, edit those days individually under the teacher's Attendance tab.
+            <strong style={{ color: 'var(--text)' }}>How changes apply:</strong> saved timings affect <strong>new punches from now on</strong>. Each attendance record snapshots the schedule that was in effect on the day it was recorded, so historical late / early-leave counts stay accurate when you change policy mid-period. To retroactively apply a change to past dates, edit those days individually under the teacher's Attendance tab — or use <strong>Special days</strong> above, which recalculates its date immediately.
             <br /><br />
             <strong style={{ color: 'var(--text)' }}>How timings stack:</strong> per-employee <em>Custom timing</em> (on the profile) wins, then the <em>Department override</em> above, then this <em>Branch default</em> — unless a department is set to "All employees", which forces its timing on everyone in it. Grace, in and out each inherit the branch default when left blank.
           </div>
