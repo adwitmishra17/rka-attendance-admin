@@ -372,19 +372,25 @@ export default function MonthlyReport() {
       })
 
       // ── Day-by-day table ──
+      // ONE A4 PAGE PER EMPLOYEE: compact rows so a full 31-day month (32 rows
+      // incl. header) fits above the summary. margin.bottom reserves the lower
+      // band for the summary + signatures so autoTable never spills to page 2,
+      // and Notes ellipsize (never wrap) so a long note can't grow a row.
       autoTable(doc, {
-        startY: 51,
-        margin: { left: M, right: M, bottom: 18 },
+        startY: 49,
+        margin: { left: M, right: M, bottom: 53 },
+        rowPageBreak: 'avoid',
         head: [['Date', 'Day', 'Status', 'In', 'Out', 'Late (min)', 'Early-out (min)', 'Notes']],
         body,
         theme: 'plain',
-        styles: { font: 'helvetica', fontSize: 8.3, cellPadding: { top: 1.7, bottom: 1.7, left: 2, right: 2 }, textColor: [45, 45, 45], lineColor: [225, 229, 225], lineWidth: { bottom: 0.15 } },
-        headStyles: { fillColor: GREEN, textColor: 255, fontStyle: 'bold', fontSize: 8.4, lineWidth: 0 },
+        styles: { font: 'helvetica', fontSize: 7.8, cellPadding: { top: 1.2, bottom: 1.2, left: 2, right: 2 }, textColor: [45, 45, 45], lineColor: [225, 229, 225], lineWidth: { bottom: 0.15 }, overflow: 'ellipsize', valign: 'middle' },
+        headStyles: { fillColor: GREEN, textColor: 255, fontStyle: 'bold', fontSize: 7.9, lineWidth: 0, overflow: 'visible' },
         alternateRowStyles: { fillColor: [247, 249, 247] },
         columnStyles: {
-          0: { cellWidth: 18, fontStyle: 'bold' }, 1: { cellWidth: 22 }, 2: { cellWidth: 34 },
+          0: { cellWidth: 17, fontStyle: 'bold' }, 1: { cellWidth: 21 }, 2: { cellWidth: 33 },
           3: { cellWidth: 13, halign: 'center' }, 4: { cellWidth: 13, halign: 'center' },
-          5: { cellWidth: 17, halign: 'right' }, 6: { cellWidth: 22, halign: 'right' },
+          5: { cellWidth: 16, halign: 'right' }, 6: { cellWidth: 21, halign: 'right' },
+          7: { overflow: 'ellipsize' },
         },
         didParseCell: (d) => {
           if (d.section !== 'body') return
@@ -407,44 +413,27 @@ export default function MonthlyReport() {
       })
 
       // ── Summary band ──
-      // Two lines so it never runs past the page width, and school_leave is
-      // EXCLUDED from Absent (it's a paid day, not an absence).
-      const ph = doc.internal.pageSize.getHeight()
+      // school_leave is EXCLUDED from Absent (it's a paid day, not an absence).
+      // Each paid school-leave day already shows in the grid above and is
+      // counted here, so no separate dates footer is needed — that keeps the
+      // whole sheet on ONE A4 page.
       const absent = Math.max(tally.absent, Math.max(0, stats.expected - (tally.present + tally.late + tally.half_day + tally.on_leave + tally.school_leave)))
       const sumLine1 = `Expected ${stats.expected}     Present ${tally.present}     Late ${tally.late}     Half-day ${tally.half_day}     On leave ${tally.on_leave}     School leave ${tally.school_leave}     Absent ${absent}`
-      const sumLine2 = `Late ${lateMins} min     Early-out ${earlyMins} min`
-      const sumH = 20
-      let y = doc.lastAutoTable.finalY + 7
-      if (y > ph - (sumH + 8)) { doc.addPage(); y = 24 }
+      const sumLine2 = `Late ${lateMins} min     Early-out ${earlyMins} min` + (tally.school_leave > 0 ? '     (school leave = paid, not absent)' : '')
+      const sumH = 18
+      let y = doc.lastAutoTable.finalY + 6
       doc.setFillColor(237, 243, 238)
       doc.roundedRect(M, y, pageW - 2 * M, sumH, 2, 2, 'F')
       doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...GRAY)
-      doc.text('SUMMARY', M + 4, y + 5)
+      doc.text('SUMMARY', M + 4, y + 4.8)
       doc.setFont('helvetica', 'bold').setFontSize(9).setTextColor(...GREEN)
-      doc.text(sumLine1, M + 4, y + 11)
-      doc.text(sumLine2, M + 4, y + 16.4)
+      doc.text(sumLine1, M + 4, y + 10.4)
+      doc.setFont('helvetica', 'normal').setFontSize(8.2).setTextColor(...GRAY)
+      doc.text(sumLine2, M + 4, y + 15.2)
       y += sumH
 
-      // ── School-leave footer ──
-      // Paid, school-declared days off, called out so payroll never reads them
-      // as absences. Only shown when there are any; wraps if there are many.
-      if (schoolLeaveDates.length > 0) {
-        const slText = `School leave (paid) — counted as paid, not absent:   ${schoolLeaveDates.join(',   ')}`
-        doc.setFont('helvetica', 'normal').setFontSize(8.5)
-        const slLines = doc.splitTextToSize(slText, pageW - 2 * M - 8)
-        const slH = 5.5 + slLines.length * 4.4
-        y += 5
-        if (y > ph - (slH + 8)) { doc.addPage(); y = 24 }
-        doc.setFillColor(233, 242, 243)            // pale teal — matches the grid status colour
-        doc.roundedRect(M, y, pageW - 2 * M, slH, 2, 2, 'F')
-        doc.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(13, 110, 120)
-        slLines.forEach((ln, i) => doc.text(ln, M + 4, y + 5.6 + i * 4.4))
-        y += slH
-      }
-
       // ── Signatures ──
-      y += 20
-      if (y > ph - 24) { doc.addPage(); y = 40 }
+      y += 12
       doc.setDrawColor(150, 150, 150).setLineWidth(0.3)
       doc.line(M, y, M + 55, y)
       doc.line(pageW - M - 55, y, pageW - M, y)
