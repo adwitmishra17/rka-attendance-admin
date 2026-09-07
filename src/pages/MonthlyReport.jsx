@@ -51,6 +51,9 @@ export default function MonthlyReport() {
   const [holidayDates, setHolidayDates] = useState([])   // ISO dates, for the per-employee day grid
   const [empId, setEmpId] = useState('')                 // per-employee CSV picker
   const [empBusy, setEmpBusy] = useState(false)
+  const [allBusy, setAllBusy] = useState(false)          // bulk all-employee PDF
+  const [allProgress, setAllProgress] = useState(0)      // employees rendered so far
+  const [adData, setAdData] = useState([])               // month's raw attendance rows (all employees), for the PDFs
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -89,7 +92,7 @@ export default function MonthlyReport() {
         const adData = []
         for (let from = 0; ; from += 1000) {
           let adQ = supabase.from('attendance_daily')
-            .select('employee_id, date, status, in_time, out_time, late_minutes, early_leave_minutes')
+            .select('employee_id, date, status, in_time, out_time, late_minutes, early_leave_minutes, notes')
             .gte('date', monthStart).lt('date', monthEnd)
             .order('date', { ascending: true }).range(from, from + 999)
           if (effectiveBranches.length > 0) adQ = adQ.in('branch_code', effectiveBranches)
@@ -172,6 +175,7 @@ export default function MonthlyReport() {
           setRows(result)
           setStats({ workingDays, holidays: holidayDateSet.size, expected })
           setHolidayDates([...holidayDateSet])
+          setAdData(adData)
           setLoading(false)
         }
       } catch (e) {
@@ -243,20 +247,31 @@ export default function MonthlyReport() {
     } catch { return null }  // asset missing → PDF still generates
   }
 
-  async function downloadEmployeePdf() {
-    const emp = rows.find(r => r.id === empId)
-    if (!emp) return
-    setEmpBusy(true)
+  // Renders ONE employee's branded sheet. Called two ways:
+  //   • single  — no opts: loads libs, makes a fresh doc, saves one file.
+  //   • bulk     — opts carry {emp, doc, autoTable, crest, banner, isFirst, adRows}:
+  //                renders into the shared doc (new page unless first), no save.
+  // Returns true when a page was actually drawn (bulk uses it to advance).
+  async function downloadEmployeePdf({ emp: sharedEmp, doc: sharedDoc, autoTable: sharedAutoTable,
+    crest: sharedCrest, banner: sharedBanner, isFirst = true, adRows: sharedAdRows } = {}) {
+    const emp = sharedEmp || rows.find(r => r.id === empId)
+    if (!emp) return false
+    const bulk = !!sharedDoc
+    if (!bulk) setEmpBusy(true)
     try {
       const { start: monthStart, end: monthEnd } = monthBounds(month)
-      const { data: adRows, error: adErr } = await supabase
-        .from('attendance_daily')
-        .select('date, status, in_time, out_time, late_minutes, early_leave_minutes, notes')
-        .eq('employee_id', empId)
-        .gte('date', monthStart)
-        .lt('date', monthEnd)
-        .order('date', { ascending: true })
-      if (adErr) throw adErr
+      let adRows = sharedAdRows
+      if (!adRows) {
+        const { data, error: adErr } = await supabase
+          .from('attendance_daily')
+          .select('date, status, in_time, out_time, late_minutes, early_leave_minutes, notes')
+          .eq('employee_id', emp.id)
+          .gte('date', monthStart)
+          .lt('date', monthEnd)
+          .order('date', { ascending: true })
+        if (adErr) throw adErr
+        adRows = data
+      }
 
       const byDate = new Map((adRows || []).map(r => [r.date, r]))
       const holidaySet = new Set(holidayDates)
@@ -292,16 +307,21 @@ export default function MonthlyReport() {
         kinds.push(kind)
         if (kind === 'school_leave') schoolLeaveDates.push(dateLabel)
       }
-      if (body.length === 0) throw new Error('No attendance days in this month yet.')
+      if (body.length === 0) { if (bulk) return false; throw new Error('No attendance days in this month yet.') }
 
       // PDF libs are dynamically imported so the main bundle stays lean.
       // banner-light.png = school wordmark in black+red on TRANSPARENT
       // background (the white-text banner would vanish on white paper);
       // PNG alpha is preserved so it merges with the page, no box.
-      const [{ jsPDF }, autoTableMod, crest, banner] = await Promise.all([
-        import('jspdf'), import('jspdf-autotable'), loadPng('/crest.png', 240), loadPng('/banner-light.png', 1000),
-      ])
-      const autoTable = autoTableMod.default
+      let jsPDF, autoTable, crest, banner
+      if (bulk) {
+        autoTable = sharedAutoTable; crest = sharedCrest; banner = sharedBanner
+      } else {
+        const [m1, autoTableMod, c, b] = await Promise.all([
+          import('jspdf'), import('jspdf-autotable'), loadPng('/crest.png', 240), loadPng('/banner-light.png', 1000),
+        ])
+        jsPDF = m1.jsPDF; autoTable = autoTableMod.default; crest = c; banner = b
+      }
 
       const GREEN = [26, 74, 46], GOLD = [201, 162, 39], GRAY = [120, 126, 120]
       const STATUS_COLOR = {
@@ -310,7 +330,8 @@ export default function MonthlyReport() {
         unmarked: [139, 26, 26], not_marked: [139, 26, 26], sunday: GRAY, holiday: GRAY,
       }
       const M = 14                               // page margin (mm)
-      const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+      const doc = sharedDoc || new jsPDF({ unit: 'mm', format: 'a4' })
+      if (bulk && !isFirst) doc.addPage()
       const pageW = doc.internal.pageSize.getWidth()
 
       // ── Header: crest + school wordmark image + report meta ──
@@ -431,13 +452,58 @@ export default function MonthlyReport() {
       doc.text('Prepared by (HR)', M, y + 4.5)
       doc.text('Principal / Manager', pageW - M - 55, y + 4.5)
 
-      const nameSlug = emp.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-      doc.save(`attendance-${emp.biometric_code !== '—' ? emp.biometric_code : nameSlug}-${month}.pdf`)
+      if (!bulk) {
+        const nameSlug = emp.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        doc.save(`attendance-${emp.biometric_code !== '—' ? emp.biometric_code : nameSlug}-${month}.pdf`)
+      }
+      return true
+    } catch (e) {
+      console.error(e)
+      setError(e.message || String(e))
+      if (bulk) throw e   // surface to the bulk loop so it stops cleanly
+      return false
+    } finally {
+      if (!bulk) setEmpBusy(false)
+    }
+  }
+
+  // All employees at once — one multi-page PDF (a page or more per employee),
+  // built from the month's already-loaded attendance rows (no extra queries),
+  // mirroring the "All employees CSV" export.
+  async function downloadAllEmployeesPdf() {
+    if (loading || rows.length === 0) return
+    setAllBusy(true); setAllProgress(0); setError(null)
+    try {
+      // Group the month's rows by employee once, so each sheet is drawn from memory.
+      const byEmp = new Map()
+      for (const ad of adData) {
+        let list = byEmp.get(ad.employee_id)
+        if (!list) { list = []; byEmp.set(ad.employee_id, list) }
+        list.push(ad)
+      }
+      const [{ jsPDF }, autoTableMod, crest, banner] = await Promise.all([
+        import('jspdf'), import('jspdf-autotable'), loadPng('/crest.png', 240), loadPng('/banner-light.png', 1000),
+      ])
+      const autoTable = autoTableMod.default
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+      let first = true, rendered = 0
+      for (let i = 0; i < rows.length; i++) {
+        const ok = await downloadEmployeePdf({
+          emp: rows[i], doc, autoTable, crest, banner, isFirst: first,
+          adRows: byEmp.get(rows[i].id) || [],
+        })
+        if (ok) { first = false; rendered++ }
+        setAllProgress(i + 1)
+        if (i % 4 === 0) await new Promise(r => setTimeout(r, 0))   // let the progress label paint
+      }
+      if (rendered === 0) throw new Error('No attendance days in this month yet.')
+      const branchSlug = branchLabel(currentBranch).toLowerCase().replace(/\s+/g, '-')
+      doc.save(`attendance-all-employees-${month}-${branchSlug}.pdf`)
     } catch (e) {
       console.error(e)
       setError(e.message || String(e))
     } finally {
-      setEmpBusy(false)
+      setAllBusy(false); setAllProgress(0)
     }
   }
 
@@ -523,8 +589,8 @@ export default function MonthlyReport() {
           ))}
         </select>
         <button
-          onClick={downloadEmployeePdf}
-          disabled={loading || !empId || empBusy}
+          onClick={() => downloadEmployeePdf()}
+          disabled={loading || !empId || empBusy || allBusy}
           title="Branded day-by-day attendance PDF for the selected employee"
           style={{
             background: 'var(--white)', color: 'var(--green-dark)',
@@ -540,17 +606,33 @@ export default function MonthlyReport() {
 
         <button
           onClick={downloadCsv}
-          disabled={loading || rows.length === 0}
+          disabled={loading || rows.length === 0 || allBusy}
           style={{
             background: 'var(--green-dark)', color: 'var(--white)',
             border: 'none', borderRadius: 'var(--radius-sm)',
             padding: '8px 16px', fontSize: 13, fontWeight: 500,
             cursor: loading || rows.length === 0 ? 'not-allowed' : 'pointer',
-            opacity: loading || rows.length === 0 ? 0.5 : 1,
+            opacity: loading || rows.length === 0 || allBusy ? 0.5 : 1,
             fontFamily: 'inherit',
           }}
         >
           ↓ All employees CSV
+        </button>
+
+        <button
+          onClick={downloadAllEmployeesPdf}
+          disabled={loading || rows.length === 0 || allBusy || empBusy}
+          title="One PDF with every employee's day-by-day attendance sheet"
+          style={{
+            background: 'var(--green-dark)', color: 'var(--white)',
+            border: 'none', borderRadius: 'var(--radius-sm)',
+            padding: '8px 16px', fontSize: 13, fontWeight: 500,
+            cursor: loading || rows.length === 0 || allBusy ? 'not-allowed' : 'pointer',
+            opacity: loading || rows.length === 0 || allBusy ? 0.5 : 1,
+            fontFamily: 'inherit',
+          }}
+        >
+          {allBusy ? `Preparing… ${allProgress}/${rows.length}` : '↓ All employees PDF'}
         </button>
       </div>
 
