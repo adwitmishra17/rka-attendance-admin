@@ -470,6 +470,19 @@ export default function MonthlyReport() {
       doc.text(sumLine2, M + 4, y + 15.2)
       y += sumH
 
+      // ── Signatures ──
+      // Anchored near the bottom of the sheet (using the empty space below the
+      // table), but never above the summary — so they sit consistently at the
+      // page foot whatever the month length, still comfortably on one A4 page.
+      const ph = doc.internal.pageSize.getHeight()
+      const sigY = Math.max(y + 16, ph - 28)
+      doc.setDrawColor(150, 150, 150).setLineWidth(0.3)
+      doc.line(M, sigY, M + 55, sigY)
+      doc.line(pageW - M - 55, sigY, pageW - M, sigY)
+      doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...GRAY)
+      doc.text('Prepared by (HR)', M, sigY + 4.5)
+      doc.text('Principal / Manager', pageW - M - 55, sigY + 4.5)
+
       if (!bulk) {
         const nameSlug = emp.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
         doc.save(`attendance-${emp.biometric_code !== '—' ? emp.biometric_code : nameSlug}-${month}.pdf`)
