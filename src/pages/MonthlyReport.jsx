@@ -286,13 +286,18 @@ export default function MonthlyReport() {
       const { start: monthStart, end: monthEnd } = monthBounds(month)
       let adRows = sharedAdRows
       if (!adRows) {
-        const { data, error: adErr } = await supabase
+        // Match the on-screen table + bulk export: scope to the viewed branch(es)
+        // so a multi-branch employee's single sheet shows the same days (a
+        // no-branch fetch would double-count their other branch's attendance).
+        let adQ = supabase
           .from('attendance_daily')
           .select('date, status, in_time, out_time, late_minutes, early_leave_minutes, notes')
           .eq('employee_id', emp.id)
           .gte('date', monthStart)
           .lt('date', monthEnd)
           .order('date', { ascending: true })
+        if (effectiveBranches.length > 0) adQ = adQ.in('branch_code', effectiveBranches)
+        const { data, error: adErr } = await adQ
         if (adErr) throw adErr
         adRows = data
       }
