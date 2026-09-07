@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 import { branchLabel } from '../lib/branch'
+import { listDepartments } from '../lib/departments'
 
 // "Today" computed in Asia/Kolkata so the default month boundary matches the
 // device's local clock and the daily-rollup trigger.
@@ -41,6 +42,17 @@ function countWorkingDays(startIso, endIso) {
   return n
 }
 
+// Toggle-chip style for the PDF department picker (green when selected).
+function deptChip(active) {
+  return {
+    border: `1px solid ${active ? 'var(--green-dark)' : 'var(--gray-200)'}`,
+    background: active ? 'var(--green-dark)' : 'var(--white)',
+    color: active ? 'var(--white)' : 'var(--text)',
+    borderRadius: 'var(--radius-sm)', padding: '5px 12px',
+    fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+  }
+}
+
 export default function MonthlyReport() {
   const { effectiveBranches, currentBranch } = useAuth()
 
@@ -54,8 +66,19 @@ export default function MonthlyReport() {
   const [allBusy, setAllBusy] = useState(false)          // bulk all-employee PDF
   const [allProgress, setAllProgress] = useState(0)      // employees rendered so far
   const [adData, setAdData] = useState([])               // month's raw attendance rows (all employees), for the PDFs
+  const [departments, setDepartments] = useState([])     // {id, name} for the PDF department picker
+  const [pdfDepts, setPdfDepts] = useState(new Set())    // dept ids to include in the bulk PDF; empty = all
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  // Departments load once — drives the "departments for PDF" picker.
+  useEffect(() => {
+    let cancelled = false
+    listDepartments()
+      .then(list => { if (!cancelled) setDepartments(list || []) })
+      .catch(() => { if (!cancelled) setDepartments([]) })   // picker just won't show
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -68,7 +91,7 @@ export default function MonthlyReport() {
         // 1. Active employees in the current branch scope.
         // employees.branch_codes is an ARRAY of branches the employee is in.
         let empQ = supabase.from('employees')
-          .select('id, full_name, biometric_code, branch_codes')
+          .select('id, full_name, biometric_code, branch_codes, department_id')
           .eq('is_active', true)
         if (effectiveBranches.length > 0) empQ = empQ.overlaps('branch_codes', effectiveBranches)
 
@@ -141,6 +164,7 @@ export default function MonthlyReport() {
             name: e.full_name || '(unnamed)',
             biometric_code: e.biometric_code || '—',
             branch: (e.branch_codes && e.branch_codes[0]) || '—',
+            department_id: e.department_id || null,
             expected,
             present: 0,
             school_leave: 0,
@@ -357,17 +381,31 @@ export default function MonthlyReport() {
       doc.line(M, 35, pageW - M, 35)
 
       // ── Employee info band ──
+      // Unequal widths (name gets the most room), and each value is fitted to
+      // its own column — shrunk then ellipsised — so a long name can never
+      // overflow onto the CODE / BRANCH fields beside it.
       const info = [
-        ['EMPLOYEE', emp.name], ['CODE', emp.biometric_code],
-        ['BRANCH', emp.branch], ['GENERATED', new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })],
+        { label: 'EMPLOYEE', value: emp.name, w: 0.40 },
+        { label: 'CODE', value: emp.biometric_code, w: 0.18 },
+        { label: 'BRANCH', value: emp.branch, w: 0.20 },
+        { label: 'GENERATED', value: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), w: 0.22 },
       ]
+      const bandW = pageW - 2 * M
       let ix = M
-      const colW = (pageW - 2 * M) / info.length
-      info.forEach(([label, value]) => {
+      info.forEach(({ label, value, w }) => {
+        const colW = bandW * w
+        const avail = colW - 3                      // gap before the next field
         doc.setFont('helvetica', 'bold').setFontSize(7).setTextColor(...GRAY)
         doc.text(label, ix, 41.5)
-        doc.setFont('helvetica', 'bold').setFontSize(10.5).setTextColor(30, 30, 30)
-        doc.text(String(value ?? '—'), ix, 46.5)
+        doc.setFont('helvetica', 'bold').setTextColor(30, 30, 30)
+        let fs = 10.5, str = String(value ?? '—')
+        while (fs > 8 && doc.setFontSize(fs).getTextWidth(str) > avail) fs -= 0.5   // shrink first
+        doc.setFontSize(fs)
+        if (doc.getTextWidth(str) > avail) {         // still too long → ellipsise
+          while (str.length > 1 && doc.getTextWidth(str + '…') > avail) str = str.slice(0, -1)
+          str += '…'
+        }
+        doc.text(str, ix, 46.5)
         ix += colW
       })
 
@@ -432,15 +470,6 @@ export default function MonthlyReport() {
       doc.text(sumLine2, M + 4, y + 15.2)
       y += sumH
 
-      // ── Signatures ──
-      y += 12
-      doc.setDrawColor(150, 150, 150).setLineWidth(0.3)
-      doc.line(M, y, M + 55, y)
-      doc.line(pageW - M - 55, y, pageW - M, y)
-      doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...GRAY)
-      doc.text('Prepared by (HR)', M, y + 4.5)
-      doc.text('Principal / Manager', pageW - M - 55, y + 4.5)
-
       if (!bulk) {
         const nameSlug = emp.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
         doc.save(`attendance-${emp.biometric_code !== '—' ? emp.biometric_code : nameSlug}-${month}.pdf`)
@@ -461,6 +490,9 @@ export default function MonthlyReport() {
   // mirroring the "All employees CSV" export.
   async function downloadAllEmployeesPdf() {
     if (loading || rows.length === 0) return
+    // Restrict to the chosen departments (empty selection = every department).
+    const pdfRows = pdfDepts.size ? rows.filter(r => pdfDepts.has(r.department_id)) : rows
+    if (pdfRows.length === 0) { setError('No employees in the selected department(s).'); return }
     setAllBusy(true); setAllProgress(0); setError(null)
     try {
       // Group the month's rows by employee once, so each sheet is drawn from memory.
@@ -476,18 +508,22 @@ export default function MonthlyReport() {
       const autoTable = autoTableMod.default
       const doc = new jsPDF({ unit: 'mm', format: 'a4' })
       let first = true, rendered = 0
-      for (let i = 0; i < rows.length; i++) {
+      for (let i = 0; i < pdfRows.length; i++) {
         const ok = await downloadEmployeePdf({
-          emp: rows[i], doc, autoTable, crest, banner, isFirst: first,
-          adRows: byEmp.get(rows[i].id) || [],
+          emp: pdfRows[i], doc, autoTable, crest, banner, isFirst: first,
+          adRows: byEmp.get(pdfRows[i].id) || [],
         })
         if (ok) { first = false; rendered++ }
         setAllProgress(i + 1)
         if (i % 4 === 0) await new Promise(r => setTimeout(r, 0))   // let the progress label paint
       }
       if (rendered === 0) throw new Error('No attendance days in this month yet.')
+      // Name the file by the chosen department when exactly one is selected.
+      const deptSlug = pdfDepts.size === 1
+        ? '-' + (departments.find(d => pdfDepts.has(d.id))?.name || 'dept').toLowerCase().replace(/\s+/g, '-')
+        : ''
       const branchSlug = branchLabel(currentBranch).toLowerCase().replace(/\s+/g, '-')
-      doc.save(`attendance-all-employees-${month}-${branchSlug}.pdf`)
+      doc.save(`attendance-all-employees${deptSlug}-${month}-${branchSlug}.pdf`)
     } catch (e) {
       console.error(e)
       setError(e.message || String(e))
@@ -498,6 +534,16 @@ export default function MonthlyReport() {
 
   const totalPresent = useMemo(() => rows.reduce((s, r) => s + r.present, 0), [rows])
   const totalLateMins = useMemo(() => rows.reduce((s, r) => s + r.lateMins, 0), [rows])
+  // How many employees the bulk PDF will include (respects the department picker).
+  const pdfCount = useMemo(
+    () => pdfDepts.size ? rows.filter(r => pdfDepts.has(r.department_id)).length : rows.length,
+    [rows, pdfDepts],
+  )
+  const toggleDept = (id) => setPdfDepts(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
 
   return (
     <div style={{ padding: '32px 36px', maxWidth: 1400 }}>
@@ -610,20 +656,44 @@ export default function MonthlyReport() {
 
         <button
           onClick={downloadAllEmployeesPdf}
-          disabled={loading || rows.length === 0 || allBusy || empBusy}
-          title="One PDF with every employee's day-by-day attendance sheet"
+          disabled={loading || pdfCount === 0 || allBusy || empBusy}
+          title="One PDF with each selected employee's day-by-day attendance sheet (one A4 page per employee)"
           style={{
             background: 'var(--green-dark)', color: 'var(--white)',
             border: 'none', borderRadius: 'var(--radius-sm)',
             padding: '8px 16px', fontSize: 13, fontWeight: 500,
-            cursor: loading || rows.length === 0 || allBusy ? 'not-allowed' : 'pointer',
-            opacity: loading || rows.length === 0 || allBusy ? 0.5 : 1,
+            cursor: loading || pdfCount === 0 || allBusy ? 'not-allowed' : 'pointer',
+            opacity: loading || pdfCount === 0 || allBusy ? 0.5 : 1,
             fontFamily: 'inherit',
           }}
         >
-          {allBusy ? `Preparing… ${allProgress}/${rows.length}` : '↓ All employees PDF'}
+          {allBusy
+            ? `Preparing… ${allProgress}/${pdfCount}`
+            : `↓ All employees PDF${pdfDepts.size ? ` (${pdfCount})` : ''}`}
         </button>
       </div>
+
+      {/* Departments to include in the "All employees PDF". None selected = all. */}
+      {departments.length > 0 && (
+        <div style={{
+          display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center',
+        }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 2 }}>
+            PDF departments
+          </span>
+          <button onClick={() => setPdfDepts(new Set())} style={deptChip(pdfDepts.size === 0)}>
+            All
+          </button>
+          {departments.map(d => (
+            <button key={d.id} onClick={() => toggleDept(d.id)} style={deptChip(pdfDepts.has(d.id))}>
+              {d.name}
+            </button>
+          ))}
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 2 }}>
+            {pdfDepts.size === 0 ? 'all employees' : `${pdfCount} employee${pdfCount === 1 ? '' : 's'}`}
+          </span>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 18 }}>
