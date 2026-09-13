@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
     //    to change.
     const { data: docs, error: docsErr } = await supabase
       .from("employee_documents")
-      .select("id, filename, mime_type, created_at:uploaded_at")
+      .select("id, filename, mime_type, doc_type, created_at:uploaded_at")
       .eq("employee_id", emp.id)
       .is("deleted_at", null)
       .order("uploaded_at", { ascending: false });

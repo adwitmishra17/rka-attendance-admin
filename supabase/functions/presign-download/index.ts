@@ -15,6 +15,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { AwsClient } from "https://esm.sh/aws4fetch@1.0.17"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0"
+import { createRemoteJWKSet, jwtVerify } from "https://esm.sh/jose@5.9.6"
 
 const R2_ACCOUNT_ID = Deno.env.get("R2_ACCOUNT_ID")!
 const R2_ACCESS_KEY_ID = Deno.env.get("R2_ACCESS_KEY_ID")!
@@ -23,10 +24,16 @@ const R2_BUCKET = Deno.env.get("R2_BUCKET")!
 const ADMIN_SHARED_SECRET = Deno.env.get("ADMIN_SHARED_SECRET")!
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+const FIREBASE_PROJECT_ID = Deno.env.get("FIREBASE_PROJECT_ID")!
+// The owner super admin (matches HRMS src/App.jsx SUPER_ADMIN_EMAIL).
+const SUPER_ADMIN_EMAIL = "adwit@rkacademyballia.in"
+const FIREBASE_JWKS = createRemoteJWKSet(
+  new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"),
+)
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-secret",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-secret, x-firebase-token",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
@@ -64,6 +71,34 @@ serve(async (req) => {
     }
     if (doc.deleted_at) {
       return json({ error: "document was deleted" }, 410)
+    }
+
+    // Enforce the super-admin document lock. If this employee's documents are
+    // locked, only the super admin or an allow-listed user may download. We
+    // identify the caller from a verified Firebase ID token (x-firebase-token)
+    // — client-supplied requestedByEmail is not trusted for this gate.
+    const { data: empLock } = await sb
+      .from("employees")
+      .select("documents_locked, documents_lock_allowed")
+      .eq("id", doc.employee_id)
+      .maybeSingle()
+    if (empLock?.documents_locked) {
+      const fbToken = req.headers.get("x-firebase-token") || ""
+      let callerEmail: string | null = null
+      if (fbToken) {
+        try {
+          const { payload } = await jwtVerify(fbToken, FIREBASE_JWKS, {
+            issuer: `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`,
+            audience: FIREBASE_PROJECT_ID,
+          })
+          callerEmail = (payload.email as string | undefined)?.toLowerCase()?.trim() ?? null
+        } catch { /* invalid token → treated as not allowed */ }
+      }
+      const allowList = (empLock.documents_lock_allowed || []).map((e: string) => String(e).toLowerCase())
+      const allowed = !!callerEmail && (callerEmail === SUPER_ADMIN_EMAIL || allowList.includes(callerEmail))
+      if (!allowed) {
+        return json({ error: "locked_by_super_admin", message: "These documents are locked by the super admin." }, 403)
+      }
     }
 
     // Sign GET URL

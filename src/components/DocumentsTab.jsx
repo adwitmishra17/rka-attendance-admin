@@ -6,6 +6,8 @@ import {
   uploadDocument,
   downloadDocument,
   deleteDocument,
+  setEmployeeDocumentLock,
+  canViewLocked,
   DOCUMENT_CATEGORIES,
   getCategoryMeta,
 } from '../lib/documents'
@@ -20,7 +22,7 @@ const ALLOWED_EXTENSIONS = '.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.doc,.docx'
 const MAX_BYTES = 10 * 1024 * 1024  // 10 MB
 
 export default function DocumentsTab({ employee }) {
-  const { user } = useAuth()
+  const { user, isSuperAdmin } = useAuth()
   const toast = useToast()
 
   const [docs, setDocs] = useState([])
@@ -28,6 +30,57 @@ export default function DocumentsTab({ employee }) {
   const [filter, setFilter] = useState('all')
   const [uploadOpen, setUploadOpen] = useState(false)
   const [deleting, setDeleting] = useState(null)
+
+  // Super-admin document lock (per employee). Seeded from the employee row.
+  const [lock, setLock] = useState({
+    locked: !!employee.documents_locked,
+    by: employee.documents_locked_by || null,
+    at: employee.documents_locked_at || null,
+    allowed: employee.documents_lock_allowed || [],
+  })
+  const [lockModalOpen, setLockModalOpen] = useState(false)
+  const [lockSaving, setLockSaving] = useState(false)
+  useEffect(() => {
+    setLock({
+      locked: !!employee.documents_locked,
+      by: employee.documents_locked_by || null,
+      at: employee.documents_locked_at || null,
+      allowed: employee.documents_lock_allowed || [],
+    })
+  }, [employee.id])
+
+  const viewerEmail = actorId(user)
+  const mayView = canViewLocked({
+    employee: { documents_locked: lock.locked, documents_lock_allowed: lock.allowed },
+    isSuperAdmin,
+    userEmail: viewerEmail,
+  })
+
+  async function applyLock(nextLocked, allowedEmails) {
+    setLockSaving(true)
+    try {
+      const res = await setEmployeeDocumentLock({
+        employeeId: employee.id,
+        locked: nextLocked,
+        allowedEmails: allowedEmails || [],
+        byEmail: viewerEmail,
+      })
+      setLock({
+        locked: res.documents_locked,
+        by: res.documents_locked_by,
+        at: res.documents_locked_at,
+        allowed: res.documents_lock_allowed || [],
+      })
+      // keep the parent employee object roughly in sync for this session
+      employee.documents_locked = res.documents_locked
+      employee.documents_lock_allowed = res.documents_lock_allowed || []
+      toast.show(nextLocked ? 'Documents locked' : 'Documents unlocked')
+      setLockModalOpen(false)
+    } catch (e) {
+      toast.show('Lock update failed: ' + e.message, 'error')
+    }
+    setLockSaving(false)
+  }
 
   useEffect(() => { reload() }, [employee.id])
 
@@ -83,65 +136,93 @@ export default function DocumentsTab({ employee }) {
 
   return (
     <div>
-      {/* Header — filter chips + upload button */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 18,
-        gap: 12,
-        flexWrap: 'wrap',
-      }}>
-        <FilterChips
-          categories={DOCUMENT_CATEGORIES}
-          counts={counts}
-          active={filter}
-          onChange={setFilter}
-        />
-        <button
-          onClick={() => setUploadOpen(true)}
-          style={btnPrimary}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ marginRight: 6 }}>
-            <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-          Upload document
-        </button>
-      </div>
+      {/* Lock status + super-admin controls */}
+      <LockBar
+        lock={lock}
+        isSuperAdmin={isSuperAdmin}
+        saving={lockSaving}
+        onEdit={() => setLockModalOpen(true)}
+        onUnlock={() => applyLock(false)}
+      />
 
-      {/* Body */}
-      {loading ? (
-        <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>
-          <Spinner />
-          <div style={{ fontSize: 12, marginTop: 8 }}>Loading documents…</div>
-        </div>
-      ) : filtered.length === 0 ? (
-        <EmptyState filter={filter} onUpload={() => setUploadOpen(true)} />
+      {lock.locked && !mayView ? (
+        <LockedPanel by={lock.by} at={lock.at} />
       ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-          gap: 14,
-        }}>
-          {filtered.map(doc => (
-            <DocumentCard
-              key={doc.id}
-              doc={doc}
-              onDownload={() => handleDownload(doc)}
-              onDelete={() => setDeleting(doc)}
+        <>
+          {/* Header — filter chips + upload button */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 18,
+            gap: 12,
+            flexWrap: 'wrap',
+          }}>
+            <FilterChips
+              categories={DOCUMENT_CATEGORIES}
+              counts={counts}
+              active={filter}
+              onChange={setFilter}
             />
-          ))}
-        </div>
+            <button
+              onClick={() => setUploadOpen(true)}
+              style={{ ...btnPrimary, ...(lock.locked ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+              disabled={lock.locked}
+              title={lock.locked ? 'Unlock the document set to add or replace files' : ''}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ marginRight: 6 }}>
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Upload document
+            </button>
+          </div>
+
+          {/* Body */}
+          {loading ? (
+            <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>
+              <Spinner />
+              <div style={{ fontSize: 12, marginTop: 8 }}>Loading documents…</div>
+            </div>
+          ) : filtered.length === 0 ? (
+            <EmptyState filter={filter} onUpload={() => setUploadOpen(true)} />
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+              gap: 14,
+            }}>
+              {filtered.map(doc => (
+                <DocumentCard
+                  key={doc.id}
+                  doc={doc}
+                  onDownload={() => handleDownload(doc)}
+                  onDelete={() => setDeleting(doc)}
+                  locked={lock.locked}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {/* Upload modal */}
-      {uploadOpen && (
+      {uploadOpen && !lock.locked && (
         <UploadModal
           employee={employee}
           uploadedByEmail={actorId(user)}
           onClose={() => setUploadOpen(false)}
           onUploaded={() => { setUploadOpen(false); reload() }}
+        />
+      )}
+
+      {/* Lock configuration modal (super admin) */}
+      {lockModalOpen && (
+        <LockModal
+          current={lock}
+          saving={lockSaving}
+          onCancel={() => setLockModalOpen(false)}
+          onConfirm={(emails) => applyLock(true, emails)}
         />
       )}
 
@@ -161,6 +242,83 @@ export default function DocumentsTab({ employee }) {
 // ============================================================================
 // FILTER CHIPS
 // ============================================================================
+// Lock status bar + super-admin controls
+function LockBar({ lock, isSuperAdmin, saving, onEdit, onUnlock }) {
+  if (!lock.locked && !isSuperAdmin) return null
+  const ghost = { padding: '6px 12px', fontSize: 12.5, fontWeight: 600, borderRadius: 7, cursor: saving ? 'default' : 'pointer', border: '1px solid var(--border, #d8d8d8)', background: 'var(--white, #fff)', color: 'var(--text, #222)' }
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+      padding: '10px 14px', borderRadius: 8, marginBottom: 14,
+      border: '1px solid ' + (lock.locked ? 'rgba(176,58,46,0.35)' : 'var(--border, #e3e3e3)'),
+      background: lock.locked ? 'rgba(176,58,46,0.07)' : 'var(--surface-2, #f6f7f6)',
+    }}>
+      <span style={{ fontSize: 16 }}>{lock.locked ? '🔒' : '🔓'}</span>
+      <div style={{ flex: 1, minWidth: 180 }}>
+        {lock.locked ? (
+          <>
+            <b style={{ color: '#b03a2e' }}>Documents locked by super admin</b>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+              {lock.by ? `Locked by ${lock.by}` : 'Locked'}{lock.at ? ` · ${fmtDate(lock.at)}` : ''}
+              {lock.allowed?.length ? ` · ${lock.allowed.length} allowed viewer${lock.allowed.length > 1 ? 's' : ''}` : ''}
+            </div>
+          </>
+        ) : (
+          <>
+            <b>Documents unlocked</b>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Any HRMS user can view. Lock to restrict to you + chosen viewers.</div>
+          </>
+        )}
+      </div>
+      {isSuperAdmin && (lock.locked ? (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onEdit} disabled={saving} style={ghost}>Edit access</button>
+          <button onClick={onUnlock} disabled={saving} style={ghost}>Unlock</button>
+        </div>
+      ) : (
+        <button onClick={onEdit} disabled={saving} style={ghost}>Lock documents</button>
+      ))}
+    </div>
+  )
+}
+
+// Shown to non-super-admins (not allow-listed) when the set is locked
+function LockedPanel({ by, at }) {
+  return (
+    <div style={{ padding: '48px 24px', textAlign: 'center', border: '1px dashed rgba(176,58,46,0.4)', borderRadius: 10, background: 'rgba(176,58,46,0.05)' }}>
+      <div style={{ fontSize: 34 }}>🔒</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: '#b03a2e', marginTop: 8 }}>Locked by super admin</div>
+      <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.6 }}>
+        These documents are restricted.{by ? ` Locked by ${by}` : ''}{at ? ` on ${fmtDate(at)}` : ''}.<br />
+        Ask the super admin for access.
+      </div>
+    </div>
+  )
+}
+
+// Super-admin modal to lock + set the allow-list
+function LockModal({ current, saving, onCancel, onConfirm }) {
+  const [emails, setEmails] = useState((current.allowed || []).join(', '))
+  const parse = () => [...new Set(emails.split(/[\s,;]+/).map(s => s.trim().toLowerCase()).filter(Boolean))]
+  return (
+    <Backdrop onClose={onCancel}>
+      <div style={{ background: 'var(--white, #fff)', borderRadius: 12, padding: 22, width: 'min(460px, 92vw)' }}>
+        <h3 style={{ margin: '0 0 6px', fontSize: 16 }}>Lock this employee's documents</h3>
+        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6, margin: '0 0 14px' }}>
+          Once locked, only you and the people you allow below can view or download these documents; other HRMS users see “Locked by super admin.” The teacher keeps access to their own uploads in the app, and teacher uploads pause until you unlock.
+        </p>
+        <FormRow label="Also allow these emails (optional)">
+          <Textarea value={emails} onChange={setEmails} rows={3} placeholder="priya@rkacademyballia.in, animesh@rkacademyballia.in" />
+        </FormRow>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+          <button onClick={onCancel} disabled={saving} style={{ padding: '9px 16px', fontSize: 13, borderRadius: 8, border: '1px solid var(--border, #d8d8d8)', background: 'var(--white, #fff)', cursor: 'pointer' }}>Cancel</button>
+          <button onClick={() => onConfirm(parse())} disabled={saving} style={btnPrimary}>{saving ? 'Locking…' : 'Lock documents'}</button>
+        </div>
+      </div>
+    </Backdrop>
+  )
+}
+
 function FilterChips({ categories, counts, active, onChange }) {
   const chips = [
     { key: 'all', label: 'All', count: counts.all },

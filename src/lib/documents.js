@@ -16,6 +16,7 @@
 // ============================================================================
 
 import { supabaseAdmin } from './supabase'
+import { auth } from './firebase'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const ADMIN_SHARED_SECRET = import.meta.env.VITE_HRMS_ADMIN_SECRET
@@ -31,14 +32,21 @@ async function callFn(name, body) {
   if (!ADMIN_SHARED_SECRET) {
     throw new Error('VITE_HRMS_ADMIN_SECRET not set in .env.local')
   }
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-admin-secret': ADMIN_SHARED_SECRET,
+    // Supabase functions require the anon key in Authorization
+    'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+  }
+  // Attach the signed-in admin's verifiable Firebase identity so server-side
+  // gates (e.g. the document lock in presign-download) can trust who's calling.
+  try {
+    const t = await auth?.currentUser?.getIdToken?.()
+    if (t) headers['x-firebase-token'] = t
+  } catch { /* no user / token unavailable — server enforces */ }
   const resp = await fetch(fnUrl(name), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-admin-secret': ADMIN_SHARED_SECRET,
-      // Supabase functions require the anon key in Authorization
-      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-    },
+    headers,
     body: JSON.stringify(body),
   })
   if (!resp.ok) {
@@ -180,6 +188,58 @@ export async function deleteDocument({ documentId, employeeId, deletedByEmail })
   })
 
   return data
+}
+
+
+// ----------------------------------------------------------------------------
+// SUPER-ADMIN LOCK — freeze an employee's document set.
+// When locked, only the super admin + allow-listed emails can download
+// (enforced in presign-download) or view the list (gated in the UI). The
+// teacher's own PWA view is unaffected; teacher uploads are blocked while locked.
+// ----------------------------------------------------------------------------
+export async function setEmployeeDocumentLock({ employeeId, locked, allowedEmails = [], byEmail }) {
+  if (!supabaseAdmin) throw new Error('Admin client not initialised')
+  const clean = [...new Set(
+    (allowedEmails || []).map(e => String(e).trim().toLowerCase()).filter(Boolean),
+  )]
+  const patch = locked
+    ? {
+        documents_locked: true,
+        documents_locked_by: byEmail || null,
+        documents_locked_at: new Date().toISOString(),
+        documents_lock_allowed: clean,
+      }
+    : {
+        documents_locked: false,
+        documents_locked_by: null,
+        documents_locked_at: null,
+        documents_lock_allowed: [],
+      }
+  const { data, error } = await supabaseAdmin
+    .from('employees')
+    .update(patch)
+    .eq('id', employeeId)
+    .select('documents_locked, documents_locked_by, documents_locked_at, documents_lock_allowed')
+    .single()
+  if (error) throw error
+
+  await supabaseAdmin.from('employee_audit_log').insert({
+    employee_id: employeeId,
+    changed_by_email: byEmail || null,
+    action: 'update',
+    field_name: locked ? 'documents_locked' : 'documents_unlocked',
+    old_value: null,
+    new_value: locked ? (clean.join(', ') || 'locked') : null,
+  })
+  return data
+}
+
+// True if the given user may view a locked employee's documents.
+export function canViewLocked({ employee, isSuperAdmin, userEmail }) {
+  if (!employee?.documents_locked) return true
+  if (isSuperAdmin) return true
+  const email = String(userEmail || '').toLowerCase()
+  return (employee.documents_lock_allowed || []).map(e => String(e).toLowerCase()).includes(email)
 }
 
 
