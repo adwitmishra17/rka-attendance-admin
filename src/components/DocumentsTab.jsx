@@ -13,6 +13,7 @@ import {
   getCategoryMeta,
 } from '../lib/documents'
 import { actorId } from '../lib/actor'
+import { listDepartments } from '../lib/departments'
 
 // ============================================================================
 // DOCUMENTS TAB — for the Employee Profile page
@@ -303,10 +304,18 @@ function LockedPanel({ by, at }) {
 function LockModal({ current, saving, onCancel, onConfirm }) {
   const [selected, setSelected] = useState(() => new Set((current.allowed || []).map(e => String(e).toLowerCase())))
   const [emps, setEmps] = useState(null)   // null = loading
+  const [deptById, setDeptById] = useState({})
   const [q, setQ] = useState('')
   const [loadErr, setLoadErr] = useState(null)
   useEffect(() => {
-    listActiveEmployees().then(setEmps).catch(e => { setLoadErr(e.message); setEmps([]) })
+    Promise.all([listActiveEmployees(), listDepartments().catch(() => [])])
+      .then(([es, depts]) => {
+        const m = {}
+        for (const d of depts || []) m[d.id] = d.name
+        setDeptById(m)
+        setEmps(es)
+      })
+      .catch(e => { setLoadErr(e.message); setEmps([]) })
   }, [])
 
   const emailOf = (e) => String(e.personal_email || e.email || '').toLowerCase()
@@ -316,11 +325,13 @@ function LockModal({ current, saving, onCancel, onConfirm }) {
   const groups = {}
   for (const e of (emps || [])) {
     const email = emailOf(e); if (!email) continue
-    if (ql && !`${e.full_name} ${email} ${e.department || ''}`.toLowerCase().includes(ql)) continue
-    const dept = e.department || 'No department'
+    const dept = deptById[e.department_id] || e.department || 'No department'
+    if (ql && !`${e.full_name} ${email} ${dept}`.toLowerCase().includes(ql)) continue
     ;(groups[dept] = groups[dept] || []).push({ ...e, _email: email })
   }
-  const deptNames = Object.keys(groups).sort()
+  // Real departments first (alphabetical), "No department" last.
+  const deptNames = Object.keys(groups).sort((a, b) =>
+    a === 'No department' ? 1 : b === 'No department' ? -1 : a.localeCompare(b))
   const pad = { padding: 16, fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }
 
   return (
