@@ -10,8 +10,10 @@ import {
   adminModules,
   adminModuleRoles,
   adminBranches,
+  adminSmsPermissions,
   DEFAULT_MODULES,
 } from '../lib/admins'
+import { SMS_CAPABILITIES, smsCapDefault } from '../lib/smsCapabilities'
 
 // ============================================================================
 // ADMIN USERS PAGE
@@ -102,6 +104,7 @@ export default function AdminUsers() {
   const [editPhone, setEditPhone] = useState('')
   const [editBranches, setEditBranches] = useState(['MAIN'])
   const [editModuleRoles, setEditModuleRoles] = useState({ ...DEFAULT_MODULE_ROLES })
+  const [editSmsPerms, setEditSmsPerms] = useState({})   // per-user SMS capability overrides
   const [editSubmitting, setEditSubmitting] = useState(false)
   const [editError, setEditError] = useState('')
 
@@ -162,6 +165,7 @@ export default function AdminUsers() {
     setEditBranches(existingBranches.length > 0 ? existingBranches : ['MAIN'])
     const mr = adminModuleRoles(a)
     setEditModuleRoles({ tracker: mr.tracker || '', hrms: mr.hrms || '', sms: mr.sms || '', social: mr.social || '' })
+    setEditSmsPerms(adminSmsPermissions(a))
     setEditError('')
   }
 
@@ -178,6 +182,8 @@ export default function AdminUsers() {
         email: editing.email ? undefined : editEmail,
         phone: editPhone,    // empty string clears phone (if email is present)
         moduleRoles: editModuleRoles,
+        // Overrides only make sense with SMS access; clear them otherwise.
+        smsPermissions: editModuleRoles.sms ? editSmsPerms : {},
         branchCodes: editBranches,
         currentUser: user,
       })
@@ -495,6 +501,16 @@ export default function AdminUsers() {
           <Field label="Branches">
             <BranchChecks value={editBranches} onChange={setEditBranches} disabled={editSubmitting} />
           </Field>
+          {editModuleRoles.sms && (
+            <Field label="Report access (SMS)">
+              <SmsReportPermissions
+                smsLevel={editModuleRoles.sms}
+                value={editSmsPerms}
+                onChange={setEditSmsPerms}
+                disabled={editSubmitting}
+              />
+            </Field>
+          )}
           {editError && <div style={errBox}>{editError}</div>}
           <button
             onClick={handleEditSave}
@@ -652,6 +668,63 @@ function PlatformAccessPicker({ value, onChange, disabled }) {
 /**
  * Compact chip pair shown under the role badge in the table.
  */
+// Per-user SMS report-access editor. Toggles are OVERRIDES on the role default
+// for the admin's SMS level; equal-to-default toggles are dropped so the stored
+// map holds only real exceptions.
+function SmsReportPermissions({ smsLevel, value, onChange, disabled }) {
+  const caps = SMS_CAPABILITIES.filter(c => c.module === 'Reports')
+  const eff = id => (id in value ? value[id] : smsCapDefault(smsLevel, id))
+  const isOv = id => (id in value) && value[id] !== smsCapDefault(smsLevel, id)
+  const ovCount = caps.filter(c => isOv(c.id)).length
+  const allowed = caps.filter(c => eff(c.id)).length
+  function toggle(id) {
+    if (disabled) return
+    const next = { ...value }
+    const desired = !eff(id)
+    if (desired === smsCapDefault(smsLevel, id)) delete next[id]
+    else next[id] = desired
+    onChange(next)
+  }
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+        <span>{allowed}/{caps.length} reports allowed</span>
+        {ovCount > 0 && <span style={{ color: 'var(--gold, #a9791f)', fontWeight: 600 }}>· {ovCount} override{ovCount > 1 ? 's' : ''}</span>}
+        {ovCount > 0 && (
+          <button type="button" onClick={() => onChange({})} disabled={disabled}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--green)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+            Reset to defaults
+          </button>
+        )}
+      </div>
+      <div style={{ border: '1px solid var(--gray-200)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+        {caps.map((c, i) => {
+          const on = eff(c.id), ov = isOv(c.id)
+          return (
+            <label key={c.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+              cursor: disabled ? 'default' : 'pointer',
+              borderTop: i ? '1px solid var(--gray-100)' : 'none',
+              background: ov ? 'rgba(169,121,31,0.07)' : 'transparent',
+            }}>
+              <input type="checkbox" checked={on} onChange={() => toggle(c.id)} disabled={disabled} />
+              <span style={{ flex: 1, fontSize: 13, color: 'var(--text)' }}>
+                {c.label}
+                {c.db && <span title="Enforced in the database" style={{ color: '#6b4fbb', marginLeft: 6 }}>◈</span>}
+              </span>
+              {ov && <span title="Differs from role default" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--gold, #a9791f)' }} />}
+              <span style={{ fontSize: 11, fontWeight: 600, color: on ? 'var(--green)' : 'var(--crimson)' }}>{on ? 'Allowed' : 'Denied'}</span>
+            </label>
+          )
+        })}
+      </div>
+      <p style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6 }}>
+        Per-user overrides on the {smsLevel === 'super_admin' ? 'super-admin' : smsLevel} default. Applies on the admin's next SMS sign-in. <span style={{ color: '#6b4fbb' }}>◈</span> also enforced in the database.
+      </p>
+    </div>
+  )
+}
+
 function ModuleChips({ admin }) {
   const mr = adminModuleRoles(admin)
   const granted = MODULE_INFO.filter(m => mr[m.value])

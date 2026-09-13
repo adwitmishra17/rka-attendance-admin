@@ -45,6 +45,13 @@ import {
 } from 'firebase/firestore'
 import { db } from './firebase'
 import { SUPER_ADMIN_EMAIL } from '../App'
+import { normaliseSmsPermissions } from './smsCapabilities'
+
+/** Read the per-user SMS capability overrides off an admin doc (map of
+ *  capabilityId -> bool; the difference from the role default). */
+export function adminSmsPermissions(adminDoc) {
+  return normaliseSmsPermissions(adminDoc?.smsPermissions)
+}
 
 const ROLES = ['admin', 'receptionist']
 export const BRANCHES = ['MAIN', 'CITY']
@@ -221,7 +228,7 @@ export async function listAdmins() {
  * - Phone-only admins → doc id is a random UUID (since the email-as-id
  *   convention can't apply when email is null).
  */
-export async function createAdmin({ email, phone, fullName, role, branchCode, branchCodes, modules, moduleRoles, currentUser }) {
+export async function createAdmin({ email, phone, fullName, role, branchCode, branchCodes, modules, moduleRoles, smsPermissions, currentUser }) {
   const e = (email || '').trim().toLowerCase()
   const n = (fullName || '').trim()
   const p = phone ? normalisePhone(phone) : null
@@ -269,6 +276,8 @@ export async function createAdmin({ email, phone, fullName, role, branchCode, br
     fullName: n,
     role,
     ...(mr ? { moduleRoles: mr } : {}),
+    ...(Object.keys(normaliseSmsPermissions(smsPermissions)).length
+      ? { smsPermissions: normaliseSmsPermissions(smsPermissions) } : {}),
     // Write both `branchCodes` (new, canonical) AND `branchCode` (the first one)
     // so legacy reads — including the tracker's existing code — keep working
     // until they migrate to the array form.
@@ -302,7 +311,7 @@ async function findAdminIdByPhone(phoneE164) {
  * fixed (it's the document key). Pass only the fields that should change;
  * others are left alone.
  */
-export async function updateAdmin({ id, fullName, role, branchCode, branchCodes, modules, moduleRoles, phone, email, currentUser }) {
+export async function updateAdmin({ id, fullName, role, branchCode, branchCodes, modules, moduleRoles, smsPermissions, phone, email, currentUser }) {
   if (!id) throw new Error('Admin id is required')
   if (id === SUPER_ADMIN_EMAIL) throw new Error('Super admin cannot be modified')
   if (role && !ROLES.includes(role)) throw new Error('Pick a role')
@@ -326,6 +335,11 @@ export async function updateAdmin({ id, fullName, role, branchCode, branchCodes,
     updates.role = legacy.role
     updates.modules = legacy.modules
     role = undefined; modules = undefined
+  }
+  // Granular SMS capability overrides (map of capabilityId -> bool). Pass {}
+  // to clear all overrides back to role defaults.
+  if (smsPermissions !== undefined) {
+    updates.smsPermissions = normaliseSmsPermissions(smsPermissions)
   }
   if (fullName != null) {
     const trimmed = fullName.trim()
