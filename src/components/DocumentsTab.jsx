@@ -14,6 +14,7 @@ import {
 } from '../lib/documents'
 import { actorId } from '../lib/actor'
 import { listDepartments } from '../lib/departments'
+import { listAdmins, adminModuleRoles } from '../lib/admins'
 
 // ============================================================================
 // DOCUMENTS TAB — for the Employee Profile page
@@ -303,31 +304,52 @@ function LockedPanel({ by, at }) {
 // it (search box, checkboxes) doesn't bubble to the backdrop's onClose.
 function LockModal({ current, saving, onCancel, onConfirm }) {
   const [selected, setSelected] = useState(() => new Set((current.allowed || []).map(e => String(e).toLowerCase())))
-  const [emps, setEmps] = useState(null)   // null = loading
-  const [deptById, setDeptById] = useState({})
+  const [rows, setRows] = useState(null)   // null = loading; [{id, full_name, _email, _dept, role}]
   const [q, setQ] = useState('')
   const [loadErr, setLoadErr] = useState(null)
   useEffect(() => {
-    Promise.all([listActiveEmployees(), listDepartments().catch(() => [])])
-      .then(([es, depts]) => {
-        const m = {}
-        for (const d of depts || []) m[d.id] = d.name
-        setDeptById(m)
-        setEmps(es)
-      })
-      .catch(e => { setLoadErr(e.message); setEmps([]) })
+    // HRMS users only (admins with HRMS access), grouped by their department.
+    Promise.all([
+      listAdmins().catch(() => []),
+      listActiveEmployees().catch(() => []),
+      listDepartments().catch(() => []),
+    ]).then(([admins, es, depts]) => {
+      const deptName = {}
+      for (const d of depts || []) deptName[d.id] = d.name
+      // Map a login email -> department_id via the employee record (either email field).
+      const deptByEmail = {}
+      for (const e of es || []) {
+        if (!e.department_id) continue
+        for (const em of [e.personal_email, e.email]) {
+          if (em) deptByEmail[String(em).toLowerCase()] = e.department_id
+        }
+      }
+      const out = []
+      for (const a of admins || []) {
+        if (a.isActive === false) continue
+        if (!adminModuleRoles(a).hrms) continue          // must be able to log into HRMS
+        const email = String(a.email || '').toLowerCase()
+        if (!email) continue                              // email-based allow-list (phone-only can't be matched)
+        out.push({
+          id: a.id,
+          full_name: a.fullName || email,
+          _email: email,
+          role: adminModuleRoles(a).hrms,
+          _dept: deptName[deptByEmail[email]] || 'No department',
+        })
+      }
+      out.sort((x, y) => x.full_name.localeCompare(y.full_name))
+      setRows(out)
+    }).catch(e => { setLoadErr(e.message); setRows([]) })
   }, [])
 
-  const emailOf = (e) => String(e.personal_email || e.email || '').toLowerCase()
   const toggle = (email) => setSelected(s => { const n = new Set(s); n.has(email) ? n.delete(email) : n.add(email); return n })
 
   const ql = q.trim().toLowerCase()
   const groups = {}
-  for (const e of (emps || [])) {
-    const email = emailOf(e); if (!email) continue
-    const dept = deptById[e.department_id] || e.department || 'No department'
-    if (ql && !`${e.full_name} ${email} ${dept}`.toLowerCase().includes(ql)) continue
-    ;(groups[dept] = groups[dept] || []).push({ ...e, _email: email })
+  for (const r of (rows || [])) {
+    if (ql && !`${r.full_name} ${r._email} ${r._dept}`.toLowerCase().includes(ql)) continue
+    ;(groups[r._dept] = groups[r._dept] || []).push(r)
   }
   // Real departments first (alphabetical), "No department" last.
   const deptNames = Object.keys(groups).sort((a, b) =>
@@ -342,14 +364,14 @@ function LockModal({ current, saving, onCancel, onConfirm }) {
           Once locked, only you and the people you allow below can view or download these documents; other HRMS users see “Locked by super admin.” The teacher keeps access to their own uploads in the app, and teacher uploads pause until you unlock.
         </p>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>
-          Allow these people ({selected.size} selected)
+          Allow these HRMS users ({selected.size} selected)
         </div>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search staff by name, email, department…"
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search HRMS users by name, email, department…"
           style={{ padding: '8px 10px', fontSize: 13, borderRadius: 8, border: '1px solid var(--gray-200)', outline: 'none' }} />
         <div style={{ overflowY: 'auto', flex: 1, minHeight: 140, border: '1px solid var(--gray-200)', borderRadius: 8, marginTop: 8 }}>
-          {emps === null ? <div style={pad}>Loading staff…</div>
+          {rows === null ? <div style={pad}>Loading HRMS users…</div>
             : loadErr ? <div style={{ ...pad, color: 'var(--crimson)' }}>{loadErr}</div>
-            : deptNames.length === 0 ? <div style={pad}>No staff found.</div>
+            : deptNames.length === 0 ? <div style={pad}>No HRMS users found.</div>
             : deptNames.map(dept => (
               <div key={dept}>
                 <div style={{ position: 'sticky', top: 0, background: 'var(--gray-50, #f4f6f4)', padding: '6px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text)', borderBottom: '1px solid var(--gray-100)' }}>
