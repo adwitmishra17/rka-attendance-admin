@@ -8,6 +8,7 @@ import {
   deleteDocument,
   setEmployeeDocumentLock,
   canViewLocked,
+  listActiveEmployees,
   DOCUMENT_CATEGORIES,
   getCategoryMeta,
 } from '../lib/documents'
@@ -296,23 +297,68 @@ function LockedPanel({ by, at }) {
   )
 }
 
-// Super-admin modal to lock + set the allow-list
+// Super-admin modal to lock + choose who may view while locked. Staff picker
+// grouped by department. The card stops click propagation so interacting with
+// it (search box, checkboxes) doesn't bubble to the backdrop's onClose.
 function LockModal({ current, saving, onCancel, onConfirm }) {
-  const [emails, setEmails] = useState((current.allowed || []).join(', '))
-  const parse = () => [...new Set(emails.split(/[\s,;]+/).map(s => s.trim().toLowerCase()).filter(Boolean))]
+  const [selected, setSelected] = useState(() => new Set((current.allowed || []).map(e => String(e).toLowerCase())))
+  const [emps, setEmps] = useState(null)   // null = loading
+  const [q, setQ] = useState('')
+  const [loadErr, setLoadErr] = useState(null)
+  useEffect(() => {
+    listActiveEmployees().then(setEmps).catch(e => { setLoadErr(e.message); setEmps([]) })
+  }, [])
+
+  const emailOf = (e) => String(e.personal_email || e.email || '').toLowerCase()
+  const toggle = (email) => setSelected(s => { const n = new Set(s); n.has(email) ? n.delete(email) : n.add(email); return n })
+
+  const ql = q.trim().toLowerCase()
+  const groups = {}
+  for (const e of (emps || [])) {
+    const email = emailOf(e); if (!email) continue
+    if (ql && !`${e.full_name} ${email} ${e.department || ''}`.toLowerCase().includes(ql)) continue
+    const dept = e.department || 'No department'
+    ;(groups[dept] = groups[dept] || []).push({ ...e, _email: email })
+  }
+  const deptNames = Object.keys(groups).sort()
+  const pad = { padding: 16, fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }
+
   return (
     <Backdrop onClose={onCancel}>
-      <div style={{ background: 'var(--white, #fff)', borderRadius: 12, padding: 22, width: 'min(460px, 92vw)' }}>
-        <h3 style={{ margin: '0 0 6px', fontSize: 16 }}>Lock this employee's documents</h3>
-        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6, margin: '0 0 14px' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white, #fff)', borderRadius: 12, padding: 22, width: 'min(560px, 94vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+        <h3 style={{ margin: '0 0 6px', fontSize: 16 }}>{current.locked ? 'Edit who can view these documents' : "Lock this employee's documents"}</h3>
+        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6, margin: '0 0 12px' }}>
           Once locked, only you and the people you allow below can view or download these documents; other HRMS users see “Locked by super admin.” The teacher keeps access to their own uploads in the app, and teacher uploads pause until you unlock.
         </p>
-        <FormRow label="Also allow these emails (optional)">
-          <Textarea value={emails} onChange={setEmails} rows={3} placeholder="priya@rkacademyballia.in, animesh@rkacademyballia.in" />
-        </FormRow>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>
+          Allow these people ({selected.size} selected)
+        </div>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search staff by name, email, department…"
+          style={{ padding: '8px 10px', fontSize: 13, borderRadius: 8, border: '1px solid var(--gray-200)', outline: 'none' }} />
+        <div style={{ overflowY: 'auto', flex: 1, minHeight: 140, border: '1px solid var(--gray-200)', borderRadius: 8, marginTop: 8 }}>
+          {emps === null ? <div style={pad}>Loading staff…</div>
+            : loadErr ? <div style={{ ...pad, color: 'var(--crimson)' }}>{loadErr}</div>
+            : deptNames.length === 0 ? <div style={pad}>No staff found.</div>
+            : deptNames.map(dept => (
+              <div key={dept}>
+                <div style={{ position: 'sticky', top: 0, background: 'var(--gray-50, #f4f6f4)', padding: '6px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text)', borderBottom: '1px solid var(--gray-100)' }}>
+                  {dept} <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>· {groups[dept].length}</span>
+                </div>
+                {groups[dept].map(e => (
+                  <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer', borderTop: '1px solid var(--gray-100)' }}>
+                    <input type="checkbox" checked={selected.has(e._email)} onChange={() => toggle(e._email)} />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{e.full_name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e._email}</div>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ))}
+        </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
           <button onClick={onCancel} disabled={saving} style={{ padding: '9px 16px', fontSize: 13, borderRadius: 8, border: '1px solid var(--border, #d8d8d8)', background: 'var(--white, #fff)', cursor: 'pointer' }}>Cancel</button>
-          <button onClick={() => onConfirm(parse())} disabled={saving} style={btnPrimary}>{saving ? 'Locking…' : 'Lock documents'}</button>
+          <button onClick={() => onConfirm(Array.from(selected))} disabled={saving} style={btnPrimary}>{saving ? 'Saving…' : (current.locked ? 'Save access' : 'Lock documents')}</button>
         </div>
       </div>
     </Backdrop>

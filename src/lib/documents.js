@@ -234,6 +234,19 @@ export async function setEmployeeDocumentLock({ employeeId, locked, allowedEmail
   return data
 }
 
+// Active staff for the lock allow-list picker (grouped by department in the UI).
+export async function listActiveEmployees() {
+  if (!supabaseAdmin) throw new Error('Admin client not initialised')
+  const { data, error } = await supabaseAdmin
+    .from('employees')
+    .select('id, full_name, department, email, personal_email')
+    .eq('is_active', true)
+    .order('department', { ascending: true, nullsFirst: false })
+    .order('full_name', { ascending: true })
+  if (error) throw error
+  return data || []
+}
+
 // True if the given user may view a locked employee's documents.
 export function canViewLocked({ employee, isSuperAdmin, userEmail }) {
   if (!employee?.documents_locked) return true
