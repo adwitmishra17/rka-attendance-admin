@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase, supabaseAdmin } from '../lib/supabase'
 import { useAuth } from '../App'
 import { useToast } from '../components/Toast'
@@ -66,7 +67,12 @@ export default function Attendance() {
   const [holidaysOnDate, setHolidaysOnDate] = useState([])  // can be 0, 1, or 2 holidays (per branch + global)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  // Deep links from the dashboard (/attendance?status=late) pre-select a filter.
+  const [searchParams] = useSearchParams()
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const s = searchParams.get('status')
+    return s && STATUS_STYLES[s] ? s : 'all'
+  })
   const [exemptEmployees, setExemptEmployees] = useState([])
   const [exemptOpen, setExemptOpen] = useState(false)
 

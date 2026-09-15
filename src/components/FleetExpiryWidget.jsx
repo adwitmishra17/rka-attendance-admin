@@ -110,31 +110,29 @@ export default function FleetExpiryWidget() {
     <div style={{
       background: 'var(--white)',
       border: '1px solid var(--gray-200)',
-      borderRadius: 'var(--radius-lg)',
-      padding: '20px 24px',
+      borderRadius: 14,
+      overflow: 'hidden',
     }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 14,
+        gap: 12,
+        padding: '13px 18px',
+        borderBottom: '1px solid var(--gray-100)',
       }}>
-        <div>
-          <div style={{
-            fontSize: 11, color: 'var(--text-muted)',
-            textTransform: 'uppercase', letterSpacing: '0.06em',
-            fontWeight: 600,
-          }}>
-            Fleet — Expiring Soon
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
+            Fleet documents
           </div>
-          <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 2 }}>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 1 }}>
             Vehicle and driver documents expired or expiring in the next 30 days
           </div>
         </div>
         {!loading && items.length > 0 && (
           <span style={{
-            fontSize: 11, fontWeight: 600,
-            padding: '3px 10px',
+            fontSize: 11, fontWeight: 700,
+            padding: '2px 8px',
             background: items.some(i => daysUntil(i.expires_at) < 0)
               ? 'var(--crimson-light)'
               : 'var(--gold-light)',
@@ -142,13 +140,13 @@ export default function FleetExpiryWidget() {
               ? 'var(--crimson)'
               : 'var(--gold-dark)',
             borderRadius: 999,
-            letterSpacing: '0.04em',
+            flexShrink: 0,
           }}>
-            {items.length} {items.length === 1 ? 'item' : 'items'}
+            {items.length}
           </span>
         )}
       </div>
-
+      <div style={{ padding: '12px 18px 14px' }}>
       {loading ? (
         <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
           Loading…
@@ -158,16 +156,8 @@ export default function FleetExpiryWidget() {
           {error}
         </div>
       ) : items.length === 0 ? (
-        <div style={{
-          padding: '20px 16px',
-          textAlign: 'center',
-          color: 'var(--text-muted)',
-          fontSize: 12,
-          background: 'var(--green-light)',
-          border: '1px solid var(--green-muted)',
-          borderRadius: 'var(--radius-sm)',
-        }}>
-          ✓ All fleet documents are current. Nothing expiring in the next 30 days.
+        <div style={{ padding: '6px 0', color: 'var(--text-muted)', fontSize: 12.5 }}>
+          All fleet documents are current. Nothing expiring in the next 30 days.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -183,6 +173,7 @@ export default function FleetExpiryWidget() {
           ))}
         </div>
       )}
+      </div>
     </div>
   )
 }
