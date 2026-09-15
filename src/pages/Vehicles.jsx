@@ -17,6 +17,10 @@ import {
   VEHICLE_STATUSES,
 } from '../lib/vehicles'
 import { listEligibleEmployees } from '../lib/vehicleAssignments'
+import {
+  Page, PageHead, Card, CardHead, PrimaryButton, Chip, SearchInput, LoadingBlock, EmptyBlock, PlusIcon,
+  primaryButtonStyle, secondaryButtonStyle, dangerButtonStyle, smallSecondaryButtonStyle,
+} from '../components/ui'
 
 // ============================================================================
 // VEHICLES
@@ -154,86 +158,52 @@ export default function Vehicles() {
   }
 
   return (
-    <div style={{ padding: '32px 36px', maxWidth: 1200 }}>
-      {/* Header */}
-      <div className="fade-in" style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 600, color: 'var(--green-dark)', marginBottom: 6 }}>
-            Vehicles
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            School fleet — buses and small vehicles. Click an RC to manage documents and assignments.
-          </p>
-          <div style={{ width: 40, height: 2, background: 'linear-gradient(90deg, var(--gold), transparent)', marginTop: 8, borderRadius: 1 }} />
-        </div>
-        <button onClick={() => setEditing({})} style={btnPrimary}>
-          + Add vehicle
-        </button>
-      </div>
+    <Page>
+      <PageHead
+        title="Vehicles"
+        sub="School fleet — buses and small vehicles. Open a vehicle to manage its documents and assignments."
+        actions={<PrimaryButton icon={<PlusIcon />} onClick={() => setEditing({})}>Add vehicle</PrimaryButton>}
+      />
 
       {/* ============ SECTION 1 — VEHICLES ============ */}
-      <SectionHeading title="Fleet vehicles" />
+      <Card>
+        <CardHead
+          title="Fleet vehicles"
+          sub={loading ? 'Loading…' : `${filtered.length} shown`}
+          right={<SearchInput value={search} onChange={setSearch} placeholder="Search RC, make, model…" width={240} />}
+        />
+        <div style={{ display: 'flex', gap: 6, padding: '10px 18px', borderBottom: '1px solid var(--gray-100)', flexWrap: 'wrap', alignItems: 'center' }}>
+          <FilterChips
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[
+              { value: 'active',   label: 'Active',   count: counts.active },
+              { value: 'inactive', label: 'Inactive', count: counts.inactive },
+              { value: 'sold',     label: 'Sold',     count: counts.sold },
+              { value: 'scrapped', label: 'Scrapped', count: counts.scrapped },
+              { value: 'all',      label: 'All',      count: counts.all },
+            ]}
+          />
+          <div style={{ width: 1, height: 20, background: 'var(--gray-200)', margin: '0 6px' }} />
+          <FilterChips
+            value={typeFilter}
+            onChange={setTypeFilter}
+            options={[
+              { value: 'all',   label: 'All types' },
+              { value: 'bus',   label: 'Buses' },
+              { value: 'small', label: 'Small' },
+            ]}
+          />
+        </div>
 
-      {/* Filters row */}
-      <div style={{ marginBottom: 16, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        <FilterChips
-          value={statusFilter}
-          onChange={setStatusFilter}
-          options={[
-            { value: 'active',   label: `Active (${counts.active})` },
-            { value: 'inactive', label: `Inactive (${counts.inactive})` },
-            { value: 'sold',     label: `Sold (${counts.sold})` },
-            { value: 'scrapped', label: `Scrapped (${counts.scrapped})` },
-            { value: 'all',      label: `All (${counts.all})` },
-          ]}
-        />
-        <div style={{ width: 1, height: 22, background: 'var(--gray-200)' }} />
-        <FilterChips
-          value={typeFilter}
-          onChange={setTypeFilter}
-          options={[
-            { value: 'all',   label: 'All types' },
-            { value: 'bus',   label: 'Buses' },
-            { value: 'small', label: 'Small' },
-          ]}
-        />
-        <div style={{ flex: 1 }} />
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search RC, make, model…"
-          style={{
-            padding: '7px 12px',
-            border: '1px solid var(--gray-200)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-            width: 240,
-            background: 'var(--white)',
-            color: 'var(--text)',
-            fontFamily: 'inherit',
-            outline: 'none',
-          }}
-        />
-      </div>
-
-      {/* Vehicles list */}
-      <div style={{
-        background: 'var(--white)',
-        border: '1px solid var(--gray-200)',
-        borderRadius: 'var(--radius-lg)',
-        overflow: 'hidden',
-      }}>
         {loading ? (
-          <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-            Loading…
-          </div>
+          <LoadingBlock label="Loading vehicles…" />
         ) : filtered.length === 0 ? (
-          <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-            {vehicles.length === 0
-              ? 'No vehicles yet. Click + Add vehicle to register one.'
-              : 'No vehicles match the current filters.'}
-          </div>
+          <EmptyBlock
+            title={vehicles.length === 0 ? 'No vehicles yet' : 'No vehicles match'}
+            sub={vehicles.length === 0 ? 'Add a vehicle to register it in the fleet.' : 'Try another status or type, or clear the search.'}
+            action={vehicles.length === 0 && <PrimaryButton icon={<PlusIcon />} onClick={() => setEditing({})}>Add vehicle</PrimaryButton>}
+          />
         ) : (
           <>
             <div style={tableHeader}>
@@ -260,13 +230,13 @@ export default function Vehicles() {
             ))}
           </>
         )}
-      </div>
+      </Card>
 
       {/* ============ SECTION 2 — UNASSIGNED STAFF ============ */}
-      <div style={{ marginTop: 36 }}>
-        <SectionHeading
+      <Card>
+        <CardHead
           title="Unassigned drivers & conductors"
-          subtitle="HRMS staff in the Drivers and Conductors departments not currently assigned to any vehicle."
+          sub="HRMS staff in the Drivers and Conductors departments not currently assigned to any vehicle."
         />
         <UnassignedFleetSection
           drivers={unassignedDrivers}
@@ -274,7 +244,7 @@ export default function Vehicles() {
           loading={loadingStaff}
           onOpenEmployee={(id) => navigate(`/employees/${id}`)}
         />
-      </div>
+      </Card>
 
       {/* Edit/Add modal */}
       {editing && (
@@ -301,35 +271,13 @@ export default function Vehicles() {
           </div>
         </Modal>
       )}
-    </div>
+    </Page>
   )
 }
 
 
 // ============================================================================
-// Section heading
-// ============================================================================
-function SectionHeading({ title, subtitle }) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <h2 style={{
-        fontSize: 13, fontWeight: 600, color: 'var(--green-dark)',
-        textTransform: 'uppercase', letterSpacing: '0.06em',
-      }}>
-        {title}
-      </h2>
-      {subtitle && (
-        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
-          {subtitle}
-        </p>
-      )}
-    </div>
-  )
-}
-
-
-// ============================================================================
-// Unassigned drivers & conductors
+// Unassigned drivers & conductors — body of the card (head lives in the page)
 // ============================================================================
 function UnassignedFleetSection({ drivers, conductors, loading, onOpenEmployee }) {
   const total = drivers.length + conductors.length
@@ -340,80 +288,67 @@ function UnassignedFleetSection({ drivers, conductors, loading, onOpenEmployee }
     ...conductors.map(e => ({ ...e, role: 'conductor' })),
   ]
 
+  if (loading) return <LoadingBlock label="Loading staff…" />
+
+  if (allAssigned) {
+    return (
+      <div style={{ padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--green-light)', color: 'var(--green-dark)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M20 6 9 17l-5-5" /></svg>
+        </span>
+        <div style={{ fontSize: 13, color: 'var(--text)' }}>Every driver and conductor in HRMS is assigned to a vehicle.</div>
+      </div>
+    )
+  }
+
   return (
-    <div style={{
-      background: 'var(--white)',
-      border: '1px solid var(--gray-200)',
-      borderRadius: 'var(--radius-lg)',
-      overflow: 'hidden',
-    }}>
-      {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-          Loading…
-        </div>
-      ) : allAssigned ? (
-        <div style={{
-          padding: '24px 18px',
-          textAlign: 'center',
-          background: 'var(--green-light)',
-          border: '1px solid var(--green-muted)',
-          margin: 12,
-          borderRadius: 'var(--radius-sm)',
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--green-dark)' }}>
-            ✓ All Drivers &amp; Conductors in HRMS are assigned to Vehicles
-          </div>
-        </div>
-      ) : (
-        <>
-          <div style={{
-            padding: '10px 18px',
-            background: 'var(--gray-50)',
-            borderBottom: '1px solid var(--gray-200)',
-            fontSize: 11.5, color: 'var(--text-muted)',
+    <>
+      <div style={{
+        padding: '9px 18px',
+        background: 'var(--gray-50)',
+        borderBottom: '1px solid var(--gray-100)',
+        fontSize: 11.5, color: 'var(--text-muted)',
+      }}>
+        {drivers.length} driver{drivers.length === 1 ? '' : 's'}
+        {' · '}
+        {conductors.length} conductor{conductors.length === 1 ? '' : 's'}
+        {' awaiting assignment'}
+      </div>
+      {rows.map((e, idx) => (
+        <div
+          key={`${e.role}-${e.id}`}
+          onClick={() => onOpenEmployee(e.id)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            padding: '11px 18px', fontSize: 13, cursor: 'pointer',
+            borderBottom: idx === rows.length - 1 ? 'none' : '1px solid var(--gray-100)',
+            transition: 'background 0.12s',
+          }}
+          onMouseEnter={ev => ev.currentTarget.style.background = 'var(--gray-50)'}
+          onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
+        >
+          <span style={{
+            flex: '0 0 auto', padding: '2px 9px', borderRadius: 999,
+            fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
+            background: e.role === 'driver' ? 'var(--green-light)' : 'var(--gold-light)',
+            color: e.role === 'driver' ? 'var(--green-dark)' : 'var(--gold-dark)',
           }}>
-            {drivers.length} driver{drivers.length === 1 ? '' : 's'}
-            {' · '}
-            {conductors.length} conductor{conductors.length === 1 ? '' : 's'}
-            {' awaiting assignment'}
-          </div>
-          {rows.map((e, idx) => (
-            <div
-              key={`${e.role}-${e.id}`}
-              onClick={() => onOpenEmployee(e.id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '12px 18px', fontSize: 13, cursor: 'pointer',
-                borderBottom: idx === rows.length - 1 ? 'none' : '1px solid var(--gray-100)',
-                transition: 'background 0.12s',
-              }}
-              onMouseEnter={ev => ev.currentTarget.style.background = 'var(--gray-50)'}
-              onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
-            >
-              <span style={{
-                flex: '0 0 auto', padding: '2px 9px', borderRadius: 999,
-                fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
-                background: e.role === 'driver' ? 'var(--green-light)' : 'var(--gold-light)',
-                color: e.role === 'driver' ? 'var(--green-dark)' : 'var(--gold-dark)',
-              }}>
-                {e.role}
-              </span>
-              <span style={{ flex: 1, minWidth: 0, color: 'var(--text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {e.full_name}
-              </span>
-              {e.employee_code && (
-                <span style={{ flex: '0 0 auto', fontSize: 11, color: 'var(--gray-400)' }}>
-                  #{e.employee_code}
-                </span>
-              )}
-              <span style={{ flex: '0 0 auto', fontSize: 11, color: 'var(--text-muted)' }}>
-                Open →
-              </span>
-            </div>
-          ))}
-        </>
-      )}
-    </div>
+            {e.role}
+          </span>
+          <span style={{ flex: 1, minWidth: 0, color: 'var(--text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {e.full_name}
+          </span>
+          {e.employee_code && (
+            <span style={{ flex: '0 0 auto', fontSize: 11, color: 'var(--gray-400)' }}>
+              #{e.employee_code}
+            </span>
+          )}
+          <span style={{ flex: '0 0 auto', fontSize: 12, fontWeight: 600, color: 'var(--green)' }}>
+            Open →
+          </span>
+        </div>
+      ))}
+    </>
   )
 }
 
@@ -428,7 +363,7 @@ function VehicleRow({ vehicle, last, showBranch, onOpen, onEdit, onDelete }) {
       display: 'flex',
       alignItems: 'center',
       gap: 12,
-      padding: '14px 18px',
+      padding: '12px 18px',
       borderBottom: last ? 'none' : '1px solid var(--gray-100)',
       fontSize: 13,
     }}>
@@ -437,13 +372,10 @@ function VehicleRow({ vehicle, last, showBranch, onOpen, onEdit, onDelete }) {
         style={{
           flex: '0 0 130px',
           fontWeight: 600,
-          color: 'var(--green-dark)',
+          color: 'var(--text)',
           letterSpacing: '0.02em',
           cursor: 'pointer',
-          textDecoration: 'underline',
-          textDecorationColor: 'var(--gray-200)',
-          textDecorationThickness: 1,
-          textUnderlineOffset: 3,
+          fontVariantNumeric: 'tabular-nums',
         }}
         title="Open vehicle"
         role="link"
@@ -459,7 +391,7 @@ function VehicleRow({ vehicle, last, showBranch, onOpen, onEdit, onDelete }) {
           : <span style={{ color: 'var(--gray-400)' }}>—</span>}
       </div>
       {showBranch && (
-        <div style={{ flex: '0 0 100px', fontSize: 11, color: 'var(--text-muted)' }}>
+        <div style={{ flex: '0 0 100px', fontSize: 11.5, color: 'var(--text-muted)' }}>
           {branchLabel(v.branch_code)}
         </div>
       )}
@@ -482,9 +414,9 @@ function VehicleRow({ vehicle, last, showBranch, onOpen, onEdit, onDelete }) {
         <StatusBadge status={v.status} />
       </div>
       <div style={{ flex: '0 0 170px', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-        <button onClick={onOpen}    style={btnSecondary}>Open</button>
-        <button onClick={onEdit}    style={btnSecondary}>Edit</button>
-        <button onClick={onDelete}  style={btnSecondaryDanger}>Delete</button>
+        <button onClick={onOpen}    style={btnRow}>Open</button>
+        <button onClick={onEdit}    style={btnRow}>Edit</button>
+        <button onClick={onDelete}  style={btnRowDanger}>Delete</button>
       </div>
     </div>
   )
@@ -546,30 +478,12 @@ function StatusBadge({ status }) {
 // ============================================================================
 function FilterChips({ value, onChange, options }) {
   return (
-    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-      {options.map(o => {
-        const active = o.value === value
-        return (
-          <button
-            key={o.value}
-            onClick={() => onChange(o.value)}
-            style={{
-              padding: '6px 12px',
-              fontSize: 12,
-              fontWeight: 500,
-              border: '1px solid',
-              borderColor: active ? 'var(--green-dark)' : 'var(--gray-200)',
-              background: active ? 'var(--green-dark)' : 'var(--white)',
-              color: active ? 'white' : 'var(--text)',
-              borderRadius: 'var(--radius-sm)',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            {o.label}
-          </button>
-        )
-      })}
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {options.map(o => (
+        <Chip key={o.value} active={o.value === value} onClick={() => onChange(o.value)} count={o.count}>
+          {o.label}
+        </Chip>
+      ))}
     </div>
   )
 }
@@ -864,45 +778,16 @@ const tableHeader = {
   gap: 12,
   padding: '10px 18px',
   background: 'var(--gray-50)',
-  borderBottom: '1px solid var(--gray-200)',
-  fontSize: 10,
+  borderBottom: '1px solid var(--gray-100)',
+  fontSize: 10.5,
   fontWeight: 600,
   color: 'var(--text-muted)',
   textTransform: 'uppercase',
-  letterSpacing: '0.04em',
+  letterSpacing: '0.06em',
 }
 
-const btnPrimary = {
-  padding: '7px 16px',
-  background: 'var(--green-dark)',
-  color: 'white',
-  border: 'none',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: 13, fontWeight: 500,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-}
-
-const btnSecondary = {
-  padding: '6px 12px',
-  background: 'var(--white)',
-  color: 'var(--text)',
-  border: '1px solid var(--gray-200)',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: 12, fontWeight: 500,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-}
-
-const btnSecondaryDanger = { ...btnSecondary, color: 'var(--crimson)' }
-
-const btnDanger = {
-  padding: '7px 16px',
-  background: 'var(--crimson)',
-  color: 'white',
-  border: 'none',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: 13, fontWeight: 500,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-}
+const btnPrimary = primaryButtonStyle
+const btnSecondary = secondaryButtonStyle
+const btnDanger = dangerButtonStyle
+const btnRow = smallSecondaryButtonStyle
+const btnRowDanger = { ...smallSecondaryButtonStyle, color: 'var(--crimson)' }

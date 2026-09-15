@@ -7,6 +7,10 @@ import { useNavigate } from 'react-router-dom'
 import { listDepartments } from '../lib/departments'
 import { applyBranchFilterArray } from '../lib/branchQuery'
 import { branchLabel, BRANCHES } from '../lib/branch'
+import {
+  Page, PageHead, Card, CardHead, PrimaryButton, Segment, Chip, SearchInput,
+  LoadingBlock, EmptyBlock, PlusIcon, tableHead, tableCell,
+} from '../components/ui'
 
 export default function Employees() {
   const { user, effectiveBranches } = useAuth()
@@ -73,161 +77,61 @@ export default function Employees() {
   }), [employees])
 
   return (
-    <div style={{ padding: '32px 36px', maxWidth: 1200 }}>
-      {/* Header */}
-      <div className="fade-in" style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 600, color: 'var(--green-dark)', marginBottom: 6 }}>
-            Employees
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            Register teachers whose attendance will be tracked by the kiosk.
-          </p>
-          <div style={{ width: 40, height: 2, background: 'linear-gradient(90deg, var(--gold), transparent)', marginTop: 8, borderRadius: 1 }} />
-        </div>
-        <button
-          onClick={() => setEditing({})}
-          style={{
-            padding: '10px 18px',
-            background: 'var(--green-dark)',
-            color: 'white',
-            border: 'none',
-            borderRadius: 'var(--radius-md)',
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          Add employee
-        </button>
-      </div>
+    <Page>
+      <PageHead
+        title="Employees"
+        sub="Everyone the kiosk tracks, across departments. Click a row to open the profile."
+        actions={<PrimaryButton icon={<PlusIcon />} onClick={() => setEditing({})}>Add employee</PrimaryButton>}
+      />
 
-      {/* Filter tabs + search */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{
-          display: 'inline-flex',
-          background: 'var(--white)',
-          border: '1px solid var(--gray-200)',
-          borderRadius: 'var(--radius-md)',
-          padding: 3,
-          gap: 2,
-        }}>
-          {[
-            { k: 'active', label: 'Active', count: counts.active },
-            { k: 'inactive', label: 'Inactive', count: counts.inactive },
-            { k: 'all', label: 'All', count: counts.all },
-          ].map(opt => (
-            <button key={opt.k} onClick={() => setFilter(opt.k)} style={{
-              padding: '6px 14px',
-              border: 'none',
-              borderRadius: 'var(--radius-sm)',
-              background: filter === opt.k ? 'var(--green-dark)' : 'transparent',
-              color: filter === opt.k ? 'white' : 'var(--text-muted)',
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}>
-              {opt.label}
-              <span style={{
-                fontSize: 10,
-                padding: '1px 6px',
-                borderRadius: 999,
-                background: filter === opt.k ? 'rgba(255,255,255,0.2)' : 'var(--gray-100)',
-                color: filter === opt.k ? 'white' : 'var(--text-muted)',
-              }}>{opt.count}</span>
-            </button>
-          ))}
-        </div>
+      <Card>
+        <CardHead
+          title="Staff"
+          sub={loading ? 'Loading…' : `${filtered.length} shown`}
+          right={(
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <Segment
+                value={filter}
+                onChange={setFilter}
+                options={[
+                  { value: 'active', label: 'Active', count: counts.active },
+                  { value: 'inactive', label: 'Inactive', count: counts.inactive },
+                  { value: 'all', label: 'All', count: counts.all },
+                ]}
+              />
+              <SearchInput value={search} onChange={setSearch} placeholder="Search name, code or email…" width={260} />
+            </div>
+          )}
+        />
 
-        <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray-400)" strokeWidth="2" style={{
-            position: 'absolute',
-            left: 12,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            pointerEvents: 'none',
-          }}>
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search by name, code, or email…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px 8px 34px',
-              border: '1px solid var(--gray-200)',
-              borderRadius: 'var(--radius-md)',
-              fontSize: 13,
-              background: 'var(--white)',
-              color: 'var(--text)',
-              outline: 'none',
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Department filter chips (Phase 4.5) */}
-      {departments.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4 }}>
-            Department
-          </span>
-          <button
-            onClick={() => setFilterDepartmentId(null)}
-            style={deptChipStyle(!filterDepartmentId)}
-          >
-            All
-          </button>
-          {departments.map(d => (
-            <button
-              key={d.id}
-              onClick={() => setFilterDepartmentId(d.id)}
-              style={deptChipStyle(filterDepartmentId === d.id)}
-            >
-              {d.name}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Table */}
-      <div style={{
-        background: 'var(--white)',
-        border: '1px solid var(--gray-200)',
-        borderRadius: 'var(--radius-lg)',
-        overflow: 'hidden',
-      }}>
-        {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
-            <div style={{ width: 24, height: 24, border: '2px solid var(--green-muted)', borderTopColor: 'var(--green)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' }} />
-            <div style={{ fontSize: 12 }}>Loading employees…</div>
+        {/* Department filter chips (Phase 4.5) */}
+        {departments.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, padding: '10px 18px', borderBottom: '1px solid var(--gray-100)', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4 }}>
+              Department
+            </span>
+            <Chip active={!filterDepartmentId} onClick={() => setFilterDepartmentId(null)}>All</Chip>
+            {departments.map(d => (
+              <Chip key={d.id} active={filterDepartmentId === d.id} onClick={() => setFilterDepartmentId(d.id)}>{d.name}</Chip>
+            ))}
           </div>
+        )}
+
+        {loading ? (
+          <LoadingBlock label="Loading employees…" />
         ) : filtered.length === 0 ? (
           <EmptyState search={search} filter={filter} onAdd={() => setEditing({})} />
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
-                <tr style={{ background: 'var(--gray-50)' }}>
-                  <th style={th}>Name</th>
-                  <th style={th}>Codes</th>
-                  <th style={th}>Phone</th>
-                  <th style={th}>Custom timing</th>
-                  <th style={th}>Status</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Actions</th>
+                <tr>
+                  <th style={tableHead}>Name</th>
+                  <th style={tableHead}>Codes</th>
+                  <th style={tableHead}>Phone</th>
+                  <th style={tableHead}>Custom timing</th>
+                  <th style={tableHead}>Status</th>
+                  <th style={{ ...tableHead, textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -242,7 +146,8 @@ export default function Employees() {
                     }}
                     onMouseEnter={(ev) => ev.currentTarget.style.background = 'var(--gray-50)'}
                     onMouseLeave={(ev) => ev.currentTarget.style.background = 'transparent'}
-                  >                    <td style={td}>
+                  >
+                    <td style={tableCell}>
                       <div style={{ fontWeight: 500, color: 'var(--text)' }}>{e.full_name}</div>
                       {e.email && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{e.email}</div>}
                       {Array.isArray(e.branch_codes) && e.branch_codes.length > 0 && (
@@ -253,7 +158,7 @@ export default function Employees() {
                         </div>
                       )}
                     </td>
-                    <td style={td}>
+                    <td style={tableCell}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {e.employee_code && (
                           <span style={codePill}>{e.employee_code}</span>
@@ -268,19 +173,19 @@ export default function Employees() {
                         )}
                       </div>
                     </td>
-                    <td style={td}>
+                    <td style={tableCell}>
                       {e.phone || <span style={{ color: 'var(--gray-400)' }}>—</span>}
                     </td>
-                    <td style={td}>
+                    <td style={tableCell}>
                       {e.custom_in_time || e.custom_out_time ? (
-                        <span style={{ fontSize: 12, color: 'var(--text)' }}>
+                        <span style={{ fontSize: 12, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
                           {e.custom_in_time?.slice(0, 5) || '—'} → {e.custom_out_time?.slice(0, 5) || '—'}
                         </span>
                       ) : (
                         <span style={{ color: 'var(--gray-400)', fontSize: 12 }}>School default</span>
                       )}
                     </td>
-                    <td style={td}>
+                    <td style={tableCell}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                         {e.is_active ? (
                           <span style={statusPillActive}>Active</span>
@@ -294,33 +199,33 @@ export default function Employees() {
                         )}
                       </div>
                     </td>
-                    <td style={{ ...td, textAlign: 'right' }}>
+                    <td style={{ ...tableCell, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button onClick={(ev) => { ev.stopPropagation(); setEditing(e) }} style={iconBtn} title="Edit">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                    </button>
-                    <button onClick={(ev) => { ev.stopPropagation(); setDeleting(e) }} style={{ ...iconBtn, marginLeft: 4, color: 'var(--crimson)' }} title={e.is_active ? 'Deactivate' : 'Reactivate'}>
-                    {e.is_active ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z" />
-                      </svg>
-                    ) : (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="23 4 23 10 17 10" />
-                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                      </svg>
-                    )}
-                  </button>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                      </button>
+                      <button onClick={(ev) => { ev.stopPropagation(); setDeleting(e) }} style={{ ...iconBtn, marginLeft: 4, color: 'var(--crimson)' }} title={e.is_active ? 'Deactivate' : 'Reactivate'}>
+                        {e.is_active ? (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z" />
+                          </svg>
+                        ) : (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="23 4 23 10 17 10" />
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                          </svg>
+                        )}
+                      </button>
                     </td>
-            </tr>
+                  </tr>
                 ))}
-          </tbody>
+              </tbody>
             </table>
-    </div>
+          </div>
         )}
-      </div>
+      </Card>
 
       {/* Edit/Create Modal */}
       {editing !== null && (
@@ -340,26 +245,8 @@ export default function Employees() {
           onDone={() => { setDeleting(null); load() }}
         />
       )}
-    </div>
+    </Page>
   )
-}
-
-const th = {
-  textAlign: 'left',
-  padding: '11px 16px',
-  fontSize: 11,
-  fontWeight: 600,
-  color: 'var(--text-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-  borderBottom: '1px solid var(--gray-200)',
-}
-
-const td = {
-  padding: '12px 16px',
-  fontSize: 13,
-  color: 'var(--text)',
-  verticalAlign: 'middle',
 }
 
 const codePill = {
@@ -369,7 +256,7 @@ const codePill = {
   fontFamily: 'ui-monospace, "SF Mono", monospace',
   background: 'var(--gray-100)',
   color: 'var(--text)',
-  borderRadius: 4,
+  borderRadius: 6,
   fontWeight: 500,
 }
 
@@ -425,7 +312,7 @@ const exemptPill = {
 const iconBtn = {
   background: 'transparent',
   border: '1px solid var(--gray-200)',
-  borderRadius: 6,
+  borderRadius: 8,
   padding: '6px 8px',
   cursor: 'pointer',
   color: 'var(--text-muted)',
@@ -437,40 +324,11 @@ const iconBtn = {
 function EmptyState({ search, filter, onAdd }) {
   const isFiltered = search || filter !== 'active'
   return (
-    <div style={{ padding: '50px 24px', textAlign: 'center' }}>
-      <div style={{
-        width: 56, height: 56, margin: '0 auto 16px',
-        borderRadius: '50%',
-        background: 'var(--gold-light)',
-        border: '1px solid rgba(201,162,39,0.2)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--gold-dark)" strokeWidth="1.8">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-        </svg>
-      </div>
-      <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 600, color: 'var(--green-dark)', marginBottom: 6 }}>
-        {isFiltered ? 'No matching employees' : 'No employees yet'}
-      </h3>
-      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-        {isFiltered ? 'Try adjusting filters or search.' : 'Add your first teacher to start tracking attendance.'}
-      </p>
-      {!isFiltered && (
-        <button onClick={onAdd} style={{
-          padding: '9px 18px',
-          background: 'var(--green-dark)',
-          color: 'white',
-          border: 'none',
-          borderRadius: 'var(--radius-md)',
-          fontSize: 13,
-          fontWeight: 500,
-          cursor: 'pointer',
-        }}>
-          Add first employee
-        </button>
-      )}
-    </div>
+    <EmptyBlock
+      title={isFiltered ? 'No matching employees' : 'No employees yet'}
+      sub={isFiltered ? 'Try another filter or clear the search.' : 'Add your first staff member to start tracking attendance.'}
+      action={!isFiltered && <PrimaryButton icon={<PlusIcon />} onClick={onAdd}>Add first employee</PrimaryButton>}
+    />
   )
 }
 
@@ -845,16 +703,3 @@ function ConfirmDeactivate({ employee, onClose, onDone }) {
 }
 
 // Helper for department filter chips (Phase 4.5)
-function deptChipStyle(active) {
-  return {
-    padding: '5px 12px',
-    background: active ? 'var(--green-dark)' : 'var(--gray-50)',
-    color: active ? 'white' : 'var(--text-muted)',
-    border: '1px solid ' + (active ? 'var(--green-dark)' : 'var(--gray-200)'),
-    borderRadius: 999,
-    fontSize: 11.5,
-    fontWeight: 500,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-  }
-}

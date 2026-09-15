@@ -14,6 +14,7 @@ import DocumentsTab from '../components/DocumentsTab'
 import { useTransfer } from '../components/TransferBanner'
 import EmployeeAttendance from './EmployeeAttendance'
 import EmployeeFleetTab from '../components/EmployeeFleetTab'
+import { Page, Pill, primaryButtonStyle, secondaryButtonStyle } from '../components/ui'
 
 // ============================================================================
 // EMPLOYEE PROFILE PAGE
@@ -307,14 +308,25 @@ export default function EmployeeProfile() {
   const _fleetDeptName = departments?.find(d => d.id === employee?.department_id)?.name
   const isFleetStaff = _fleetDeptName === 'Drivers' || _fleetDeptName === 'Conductors'
 
+  const tabs = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'documents', label: 'Documents' },
+    { key: 'attendance', label: 'Attendance' },
+    { key: 'history', label: 'History' },
+    ...(isFleetStaff ? [{ key: 'fleet', label: 'Fleet' }] : []),
+  ]
+
   return (
-    <div style={{ padding: '32px 36px', maxWidth: 1200, margin: '0 auto' }} className="fade-in">
+    <Page maxWidth={1200} style={{ margin: '0 auto', gap: 16 }}>
 
       {/* Breadcrumb */}
-      <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--text-muted)' }}>
-        <Link to="/employees" style={{ color: 'var(--text-muted)' }}>← Employees</Link>
-        <span style={{ margin: '0 8px' }}>/</span>
-        <span style={{ color: 'var(--text)' }}>{employee.full_name}</span>
+      <div className="fade-in" style={{ fontSize: 12.5, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Link to="/employees" style={{ color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 500 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="m15 18-6-6 6-6" /></svg>
+          Employees
+        </Link>
+        <span style={{ color: 'var(--gray-300)' }}>/</span>
+        <span style={{ color: 'var(--text)', fontWeight: 500 }}>{employee.full_name}</span>
       </div>
 
       <ProfileHeader
@@ -336,44 +348,32 @@ export default function EmployeeProfile() {
 
       {/* Tabs (hidden in edit mode for focus) */}
       {!isEditing && (
-        <div style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--gray-200)',
-          marginBottom: 24,
-          marginTop: 24,
-          overflowX: 'auto',
-        }}>
-          {[
-            { key: 'overview', label: 'Overview' },
-            { key: 'documents', label: 'Documents' },
-            { key: 'attendance', label: 'Attendance' },
-            { key: 'history', label: 'History' },
-            ...(isFleetStaff ? [{ key: 'fleet', label: 'Fleet' }] : []),
-          ].map(t => (
-            <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                padding: '10px 18px',
-                fontSize: 13,
-                fontWeight: 500,
-                color: activeTab === t.key ? 'var(--green-dark)' : 'var(--text-muted)',
-                borderBottom: activeTab === t.key
-                  ? '2px solid var(--green-dark)'
-                  : '2px solid transparent',
-                marginBottom: -1,
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-                whiteSpace: 'nowrap',
-                fontFamily: 'inherit',
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--gray-200)', overflowX: 'auto' }}>
+          {tabs.map(t => {
+            const active = activeTab === t.key
+            return (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '10px 14px',
+                  fontSize: 13,
+                  fontWeight: active ? 600 : 500,
+                  color: active ? 'var(--text)' : 'var(--text-muted)',
+                  borderBottom: active ? '2px solid var(--text)' : '2px solid transparent',
+                  marginBottom: -1,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  whiteSpace: 'nowrap',
+                  fontFamily: 'var(--font-body)',
+                }}
+              >
+                {t.label}
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -407,7 +407,7 @@ export default function EmployeeProfile() {
           {activeTab === 'history' && <HistoryTab employee={employee} />}
         </>
       )}
-    </div>
+    </Page>
   )
 }
 
@@ -431,8 +431,9 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
       gap: 20,
       padding: '20px 24px',
       background: 'var(--white)',
-      borderRadius: 'var(--radius-lg)',
+      borderRadius: 14,
       border: '1px solid var(--gray-200)',
+      flexWrap: 'wrap',
     }}>
       {/* Photo / initials with disabled upload affordance */}
       <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -441,15 +442,15 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
           borderRadius: '50%',
           background: employee.profile_photo_url
             ? `url(${employee.profile_photo_url}) center/cover`
-            : 'linear-gradient(135deg, var(--green-dark), var(--gold))',
+            : 'var(--green-light)',
+          border: '1px solid var(--gray-200)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: 'white',
-          fontSize: 28,
-          fontWeight: 600,
+          color: 'var(--green-dark)',
+          fontSize: 26,
+          fontWeight: 700,
           fontFamily: 'var(--font-display)',
-          boxShadow: 'var(--shadow-sm)',
         }}>
           {!employee.profile_photo_url && initials}
         </div>
@@ -508,8 +509,9 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
         }}>
           <span style={{
             fontSize: 22,
-            fontWeight: 600,
+            fontWeight: 700,
             color: 'var(--text)',
+            letterSpacing: '-0.01em',
           }}>
             {employee.full_name}
           </span>
@@ -521,7 +523,7 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
               padding: '2px 8px',
               background: 'var(--crimson-light)',
               color: 'var(--crimson)',
-              borderRadius: 4,
+              borderRadius: 999,
               letterSpacing: '0.05em',
               textTransform: 'uppercase',
               fontFamily: 'var(--font-body)',
@@ -536,7 +538,7 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
               padding: '2px 8px',
               background: 'var(--gold-light)',
               color: 'var(--gold-dark)',
-              borderRadius: 4,
+              borderRadius: 999,
               letterSpacing: '0.05em',
               textTransform: 'uppercase',
               fontFamily: 'var(--font-body)',
@@ -553,7 +555,7 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
           display: 'flex',
           gap: 14,
           fontSize: 11,
-          color: 'var(--gray-400)',
+          color: 'var(--text-muted)',
           letterSpacing: '0.04em',
           textTransform: 'uppercase',
           flexWrap: 'wrap',
@@ -564,8 +566,8 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
         </div>
         {!isEditing && employee.updated_by && (
           <div style={{
-            fontSize: 10,
-            color: 'var(--gray-400)',
+            fontSize: 11,
+            color: 'var(--text-muted)',
             marginTop: 8,
             letterSpacing: '0.03em',
           }}>
@@ -588,7 +590,7 @@ function ProfileHeader({ employee, isEditing, saving, photoUploading, photoInput
         ) : (
           <>
             <button onClick={onCancel} disabled={saving} style={btnSecondary}>Cancel</button>
-            <button onClick={onSave} disabled={saving} style={{ ...btnPrimary, background: 'var(--green)' }}>
+            <button onClick={onSave} disabled={saving} style={btnPrimary}>
               {saving ? 'Saving…' : 'Save changes'}
             </button>
           </>
@@ -1266,7 +1268,7 @@ function RevealableField({ label, field, value, revealed, maskFn, onReveal }) {
       <div style={{
         flex: '0 0 130px',
         fontSize: 11,
-        color: 'var(--gray-400)',
+        color: 'var(--text-muted)',
         textTransform: 'uppercase',
         letterSpacing: '0.04em',
       }}>{label}</div>
@@ -1339,7 +1341,7 @@ function HistoryTab({ employee }) {
     <div style={{
       background: 'var(--white)',
       border: '1px solid var(--gray-200)',
-      borderRadius: 'var(--radius-lg)',
+      borderRadius: 14,
       overflow: 'hidden',
     }}>
       {logs.map((log, i) => (
@@ -1385,41 +1387,22 @@ function Section({ title, badge, children, fullWidth }) {
       gridColumn: fullWidth ? '1 / -1' : 'auto',
       background: 'var(--white)',
       border: '1px solid var(--gray-200)',
-      borderRadius: 'var(--radius-lg)',
-      padding: '18px 22px',
+      borderRadius: 14,
+      overflow: 'hidden',
     }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        marginBottom: 14,
+        padding: '12px 18px',
+        borderBottom: '1px solid var(--gray-100)',
       }}>
-        <div style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 13,
-          fontWeight: 600,
-          color: 'var(--green-dark)',
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
-        }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
           {title}
         </div>
-        {badge && (
-          <span style={{
-            fontSize: 9,
-            fontWeight: 600,
-            padding: '2px 7px',
-            background: 'var(--gold-light)',
-            color: 'var(--gold-dark)',
-            borderRadius: 4,
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase',
-          }}>
-            {badge}
-          </span>
-        )}
+        {badge && <Pill bg="var(--gold-light)" fg="var(--gold-dark)">{badge}</Pill>}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 18px 14px' }}>
         {children}
       </div>
     </div>
@@ -1435,7 +1418,7 @@ function Field({ label, value, multiline }) {
       <div style={{
         flex: '0 0 130px',
         fontSize: 11,
-        color: 'var(--gray-400)',
+        color: 'var(--text-muted)',
         textTransform: 'uppercase',
         letterSpacing: '0.04em',
         paddingTop: multiline ? 2 : 0,
@@ -1674,13 +1657,13 @@ function PlaceholderPanel({ title, subtitle, phase, details }) {
       padding: '60px 24px',
       textAlign: 'center',
       background: 'var(--white)',
-      border: '1px dashed var(--gray-200)',
-      borderRadius: 'var(--radius-lg)',
+      border: '1px dashed var(--gray-300)',
+      borderRadius: 14,
     }}>
       <div style={{
         fontFamily: 'var(--font-display)',
-        fontSize: 18,
-        fontWeight: 600,
+        fontSize: 16,
+        fontWeight: 700,
         color: 'var(--text)',
         marginBottom: 6,
       }}>{title}</div>
@@ -1739,38 +1722,16 @@ function PageError({ msg, onBack }) {
 // ============================================================================
 // STYLES
 // ============================================================================
-const btnPrimary = {
-  padding: '8px 16px',
-  background: 'var(--green-dark)',
-  color: 'white',
-  border: 'none',
-  borderRadius: 'var(--radius-md)',
-  fontSize: 13,
-  fontWeight: 500,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  display: 'inline-flex',
-  alignItems: 'center',
-}
+const btnPrimary = primaryButtonStyle
 
-const btnSecondary = {
-  padding: '8px 16px',
-  background: 'var(--white)',
-  color: 'var(--text)',
-  border: '1px solid var(--gray-200)',
-  borderRadius: 'var(--radius-md)',
-  fontSize: 13,
-  fontWeight: 500,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-}
+const btnSecondary = secondaryButtonStyle
 
 const revealBtn = {
   padding: '7px 12px',
   background: 'var(--white)',
   color: 'var(--green-dark)',
   border: '1px solid var(--green-muted)',
-  borderRadius: 'var(--radius-sm)',
+  borderRadius: 8,
   fontSize: 11.5,
   fontWeight: 500,
   cursor: 'pointer',

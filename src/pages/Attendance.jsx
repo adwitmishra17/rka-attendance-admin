@@ -6,6 +6,11 @@ import { useToast } from '../components/Toast'
 import { applyBranchFilter, applyBranchFilterArray, applyBranchFilterNullable } from '../lib/branchQuery'
 import { branchLabel } from '../lib/branch'
 import Modal from '../components/Modal'
+import { STATUS_ORDER, STATUS_META } from '../lib/todayRoster'
+import {
+  Page, PageHead, Card, CardHead, PrimaryButton, SecondaryButton, StatusChip, Chip,
+  SegmentBar, SearchInput, Avatar, Pill, Dot, LoadingBlock, EmptyBlock, PlusIcon,
+} from '../components/ui'
 
 const STATUS_STYLES = {
   present: { bg: 'var(--green-light)', color: 'var(--green-dark)', label: 'Present' },
@@ -239,7 +244,7 @@ export default function Attendance() {
   const stats = useMemo(() => {
     const out = {
       total: roster.length, present: 0, late: 0, absent: 0,
-      not_marked: 0, on_leave: 0, half_day: 0, school_leave: 0,
+      not_marked: 0, on_leave: 0, half_day: 0, school_leave: 0, holiday: 0,
     }
     for (const r of roster) {
       if (r.status === 'present') out.present++
@@ -249,6 +254,7 @@ export default function Attendance() {
       else if (r.status === 'on_leave') out.on_leave++
       else if (r.status === 'half_day') out.half_day++
       else if (r.status === 'school_leave') out.school_leave++
+      else if (r.status === 'holiday') out.holiday++
     }
     return out
   }, [roster])
@@ -280,242 +286,133 @@ export default function Attendance() {
     )
   }, [exemptRoster, search])
 
+  // Glance figures — same arithmetic as the dashboard.
+  const inNow = stats.present + stats.late + stats.half_day
+  const away = stats.absent + stats.not_marked
+  const onLeave = stats.on_leave + stats.school_leave
+  const counted = stats.total - stats.holiday
+  const pct = counted > 0 ? Math.round((inNow / counted) * 100) : 0
+  const pctTone = pct >= 90 ? ['var(--green-light)', 'var(--green-dark)'] : pct >= 70 ? ['var(--gold-light)', 'var(--gold-dark)'] : ['var(--crimson-light)', 'var(--crimson)']
+  const chipStatuses = [...STATUS_ORDER, 'holiday'].filter(st => stats[st] > 0 || statusFilter === st)
+
   return (
-    <div style={{ padding: '32px 36px', maxWidth: 1280 }}>
-      {/* Header */}
-      <div className="fade-in" style={{ marginBottom: 24 }}>
-        <h1 style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 26,
-          fontWeight: 600,
-          color: 'var(--green-dark)',
-          marginBottom: 6,
-        }}>
-          Attendance
-        </h1>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 620, lineHeight: 1.5 }}>
-          {isToday ? 'Live attendance for today, auto-refreshes every 30 seconds.' : `Attendance records for ${formatDateLabel(selectedDate)}.`}
-        </p>
-        <div style={{ width: 40, height: 2, background: 'linear-gradient(90deg, var(--gold), transparent)', marginTop: 8, borderRadius: 1 }} />
-      </div>
-
-      {/* Date selector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
-        <div style={{
-          display: 'inline-flex',
-          background: 'var(--white)',
-          border: '1px solid var(--gray-200)',
-          borderRadius: 'var(--radius-md)',
-          alignItems: 'center',
-          gap: 4,
-          padding: 4,
-        }}>
-          <button onClick={() => {
-            const d = new Date(selectedDate + 'T00:00:00')
-            d.setDate(d.getDate() - 1)
-            setSelectedDate(formatDate(d))
-          }} style={navButtonStyle}>
-            ←
-          </button>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={e => setSelectedDate(e.target.value)}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              padding: '7px 4px',
-              fontSize: 13,
-              color: 'var(--text)',
-              outline: 'none',
-              minWidth: 130,
-            }}
-            max={formatDate(new Date())}
-          />
-          <button
-            disabled={isToday}
-            onClick={() => {
-              const d = new Date(selectedDate + 'T00:00:00')
-              d.setDate(d.getDate() + 1)
-              const newStr = formatDate(d)
-              if (newStr <= formatDate(new Date())) setSelectedDate(newStr)
-            }}
-            style={{ ...navButtonStyle, opacity: isToday ? 0.3 : 1, cursor: isToday ? 'not-allowed' : 'pointer' }}
-          >
-            →
-          </button>
-        </div>
-        {!isToday && (
-          <button onClick={() => setSelectedDate(formatDate(new Date()))} style={{
-            padding: '7px 14px',
-            background: 'var(--green-dark)',
-            color: 'white',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 12,
-            fontWeight: 500,
-            cursor: 'pointer',
-          }}>
-            Jump to today
-          </button>
+    <Page>
+      <PageHead
+        eyebrow={`${fullDateLabel(selectedDate)}${isToday ? ' · Today' : ''}`}
+        title="Attendance"
+        sub={isToday
+          ? 'Live roster — updates as staff punch. Click a person to mark or edit their attendance.'
+          : 'Click a person to mark or edit their attendance for this date.'}
+        actions={(
+          <>
+            <DateNav value={selectedDate} onChange={setSelectedDate} isToday={isToday} />
+            {!isToday && (
+              <SecondaryButton onClick={() => setSelectedDate(formatDate(new Date()))}>Today</SecondaryButton>
+            )}
+            <PrimaryButton
+              icon={<PlusIcon />}
+              onClick={() => setManualPunch({ employee: null, daily: null })}
+              title="Manually mark attendance for a staff member on this date"
+            >
+              Mark attendance
+            </PrimaryButton>
+          </>
         )}
-        {isToday && (
-          <span style={{
-            fontSize: 11,
-            color: 'var(--green-dark)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '5px 10px',
-            background: 'var(--green-light)',
-            borderRadius: 999,
-            fontWeight: 500,
-          }}>
-            <span style={{
-              width: 6, height: 6,
-              borderRadius: '50%',
-              background: 'var(--green)',
-              animation: 'pulse 2s infinite',
-            }} />
-            Live
-          </span>
-        )}
-
-        {/* Mark attendance — opens manual punch modal for the selected date */}
-        <button
-          onClick={() => setManualPunch({ employee: null, daily: null })}
-          style={{
-            marginLeft: 'auto',
-            padding: '7px 14px',
-            background: 'var(--white)',
-            color: 'var(--green-dark)',
-            border: '1px solid var(--green-muted)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 12,
-            fontWeight: 500,
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-          title="Manually mark attendance for a teacher on this date"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-            <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-          Mark attendance
-        </button>
-      </div>
+      />
 
       {/* Holiday banner — one line per holiday that applies to current branch view */}
       {holidaysOnDate.length > 0 && (
         <div style={{
-          padding: '14px 18px',
-          background: 'linear-gradient(135deg, rgba(201,162,39,0.12), rgba(201,162,39,0.04))',
-          border: '1px solid rgba(201,162,39,0.3)',
-          borderRadius: 'var(--radius-md)',
-          marginBottom: 16,
+          padding: '12px 16px',
+          background: 'var(--gold-light)',
+          borderRadius: 12,
           fontSize: 13,
           color: 'var(--gold-dark)',
           fontWeight: 500,
+          display: 'flex', flexDirection: 'column', gap: 4,
         }}>
           {holidaysOnDate.map((h, i) => (
-            <div key={i} style={{ marginTop: i > 0 ? 4 : 0 }}>
-              ⓘ {h.name} — {formatDateLabel(selectedDate)} is a holiday
+            <div key={i}>
+              {h.name} — {formatDateLabel(selectedDate)} is a holiday
               {h.branch_code !== null && (
-                <span style={{ fontSize: 11, marginLeft: 8, opacity: 0.85 }}>
-                  ({branchLabel(h.branch_code)} only)
-                </span>
+                <span style={{ fontSize: 11, marginLeft: 8, opacity: 0.85 }}>({branchLabel(h.branch_code)} only)</span>
               )}
             </div>
           ))}
         </div>
       )}
 
-      {/* Stats */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-        gap: 10,
-        marginBottom: 20,
-      }}>
-        <StatCard label="Total" value={stats.total} accent="default" />
-        <StatCard label="Present" value={stats.present} accent="green" />
-        <StatCard label="Late" value={stats.late} accent="gold" />
-        {isToday ? (
-          <StatCard label="Not yet marked" value={stats.not_marked} accent="muted" />
-        ) : (
-          <StatCard label="Absent" value={stats.absent} accent="crimson" />
-        )}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 18 }}>
-        {/* Roster */}
-        <div>
-          {/* Filters */}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-            <input
-              type="text"
-              placeholder="Search teacher…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{
-                flex: 1, minWidth: 180,
-                padding: '8px 12px',
-                border: '1px solid var(--gray-200)',
-                borderRadius: 'var(--radius-md)',
-                fontSize: 13,
-                outline: 'none',
-                background: 'var(--white)',
-              }}
-            />
-            <select
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              style={{
-                padding: '8px 12px',
-                border: '1px solid var(--gray-200)',
-                borderRadius: 'var(--radius-md)',
-                fontSize: 13,
-                background: 'var(--white)',
-                color: 'var(--text)',
-                outline: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              <option value="all">All statuses</option>
-              <option value="present">Present</option>
-              <option value="late">Late</option>
-              {isToday ? <option value="not_marked">Not marked</option> : <option value="absent">Absent</option>}
-              <option value="on_leave">On leave</option>
-              <option value="school_leave">School Leave</option>
-              <option value="holiday">Holiday</option>
-            </select>
-          </div>
-
-          {/* Roster table */}
+      {/* At a glance — figures, bar, and status chips that double as the roster filter */}
+      <Card>
+        <CardHead
+          title={isToday ? 'Today at a glance' : 'At a glance'}
+          sub="Counted staff only · exempt employees are never included"
+          right={!loading && counted > 0 && (
+            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap', flexShrink: 0, background: pctTone[0], color: pctTone[1] }}>
+              {pct}% in
+            </span>
+          )}
+        />
+        <div style={{ padding: '18px 20px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {loading ? (
-            <LoadingState />
-          ) : filtered.length === 0 ? (
-            <EmptyState message="No teachers match this filter." />
+            <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Loading…</div>
+          ) : stats.total === 0 ? (
+            <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>No counted employees in this scope.</div>
           ) : (
-            <div style={{
-              background: 'var(--white)',
-              border: '1px solid var(--gray-200)',
-              borderRadius: 'var(--radius-lg)',
-              overflow: 'hidden',
-            }}>
-              {filtered.map((row, idx) => (
+            <>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 700, color: 'var(--text)', lineHeight: 1, letterSpacing: '-0.01em' }}>
+                  {inNow}
+                  <span style={{ fontSize: 15, fontWeight: 500, color: 'var(--text-muted)', marginLeft: 6 }}>/ {counted} in</span>
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+                  {onLeave > 0 && <><strong style={{ color: 'var(--text)', fontWeight: 600 }}>{onLeave}</strong> on leave<Dot /></>}
+                  <strong style={{ color: away > 0 ? 'var(--crimson)' : 'var(--text)', fontWeight: 600 }}>{away}</strong> {isToday ? 'not in' : 'absent'}
+                  {stats.late > 0 && <><Dot /><strong style={{ color: 'var(--gold-dark)', fontWeight: 600 }}>{stats.late}</strong> late</>}
+                </div>
+              </div>
+              <SegmentBar counts={stats} order={[...STATUS_ORDER, 'holiday']} height={12} />
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <Chip active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} count={stats.total}>All</Chip>
+                {chipStatuses.map(st => (
+                  <StatusChip
+                    key={st}
+                    status={st}
+                    count={stats[st]}
+                    active={statusFilter === st}
+                    onClick={() => setStatusFilter(statusFilter === st ? 'all' : st)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </Card>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 18, alignItems: 'start' }}>
+        {/* Roster */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
+          <Card>
+            <CardHead
+              title="Roster"
+              sub={loading ? 'Loading…' : `${filtered.length} of ${roster.length} counted staff${statusFilter !== 'all' ? ` · ${STATUS_META[statusFilter]?.label || statusFilter}` : ''}`}
+              right={<SearchInput value={search} onChange={setSearch} placeholder="Search name or code…" width={240} />}
+            />
+            {loading ? (
+              <LoadingBlock label="Loading attendance…" />
+            ) : filtered.length === 0 ? (
+              <EmptyBlock title="No one matches" sub="Try another status chip or clear the search." />
+            ) : (
+              filtered.map((row, idx) => (
                 <RosterRow
                   key={row.employee.id}
                   row={row}
                   isLast={idx === filtered.length - 1}
                   onClick={() => setManualPunch({ employee: row.employee, daily: row.daily || null })}
                 />
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </Card>
 
           {/* Exempt employees — collapsed, never counted in the stats above */}
           <ExemptSection
@@ -526,37 +423,24 @@ export default function Attendance() {
           />
         </div>
 
-        {/* Live feed sidebar */}
-        <div>
-          <div style={{
-            background: 'var(--white)',
-            border: '1px solid var(--gray-200)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '14px 16px',
-          }}>
-            <div style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: 'var(--text-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              marginBottom: 10,
-            }}>
-              {isToday ? 'Live activity' : 'Activity feed'}
+        {/* Live feed rail */}
+        <Card>
+          <CardHead
+            title={isToday ? 'Live activity' : 'Activity'}
+            sub={isToday ? 'Latest punches first' : 'Available for today only'}
+          />
+          {recentEvents.length === 0 ? (
+            <div style={{ padding: '18px', fontSize: 12.5, color: 'var(--text-muted)' }}>
+              {isToday ? 'No punches yet today.' : 'The live feed is only available for today.'}
             </div>
-            {recentEvents.length === 0 ? (
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '20px 0', textAlign: 'center' }}>
-                {isToday ? 'No activity yet today' : 'Live feed only available for today'}
-              </p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {recentEvents.map(ev => (
-                  <EventRow key={ev.id} event={ev} />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {recentEvents.map((ev, i) => (
+                <EventRow key={ev.id} event={ev} isLast={i === recentEvents.length - 1} />
+              ))}
+            </div>
+          )}
+        </Card>
       </div>
 
       {/* Manual punch modal */}
@@ -572,6 +456,37 @@ export default function Attendance() {
           onSaved={() => { setManualPunch(null); loadData() }}
         />
       )}
+    </Page>
+  )
+}
+
+function fullDateLabel(dateStr) {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+// Prev · date · next — a 36px control group that sits with the page actions.
+function DateNav({ value, onChange, isToday }) {
+  const shift = (days) => {
+    const d = new Date(value + 'T00:00:00')
+    d.setDate(d.getDate() + days)
+    const next = formatDate(d)
+    if (next <= formatDate(new Date())) onChange(next)
+  }
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', height: 36, background: 'var(--white)', border: '1px solid var(--gray-200)', borderRadius: 10, padding: '0 4px' }}>
+      <button onClick={() => shift(-1)} style={navButtonStyle} title="Previous day">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="m15 18-6-6 6-6" /></svg>
+      </button>
+      <input
+        type="date"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        max={formatDate(new Date())}
+        style={{ border: 'none', background: 'transparent', padding: '0 4px', fontSize: 13, color: 'var(--text)', outline: 'none', minWidth: 130, fontFamily: 'var(--font-body)' }}
+      />
+      <button disabled={isToday} onClick={() => shift(1)} style={{ ...navButtonStyle, opacity: isToday ? 0.3 : 1, cursor: isToday ? 'not-allowed' : 'pointer' }} title="Next day">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="m9 18 6-6-6-6" /></svg>
+      </button>
     </div>
   )
 }
@@ -579,52 +494,18 @@ export default function Attendance() {
 const navButtonStyle = {
   background: 'transparent',
   border: 'none',
-  padding: '6px 10px',
-  fontSize: 14,
+  padding: '4px 8px',
   cursor: 'pointer',
   color: 'var(--text-muted)',
-  borderRadius: 4,
-}
-
-function StatCard({ label, value, accent }) {
-  const colors = {
-    default: { bg: 'var(--white)', border: 'var(--gray-200)', valueColor: 'var(--green-dark)' },
-    green: { bg: 'var(--green-light)', border: 'rgba(27,61,27,0.2)', valueColor: 'var(--green-dark)' },
-    gold: { bg: 'var(--gold-light)', border: 'rgba(201,162,39,0.3)', valueColor: 'var(--gold-dark)' },
-    crimson: { bg: 'var(--crimson-light)', border: 'rgba(192,0,12,0.2)', valueColor: 'var(--crimson)' },
-    muted: { bg: 'var(--gray-50)', border: 'var(--gray-200)', valueColor: 'var(--text-muted)' },
-  }
-  const c = colors[accent] || colors.default
-  return (
-    <div style={{
-      background: c.bg,
-      border: `1px solid ${c.border}`,
-      borderRadius: 'var(--radius-md)',
-      padding: '12px 14px',
-    }}>
-      <div style={{
-        fontSize: 10.5,
-        fontWeight: 600,
-        color: 'var(--text-muted)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em',
-        marginBottom: 4,
-      }}>{label}</div>
-      <div style={{
-        fontFamily: 'var(--font-display)',
-        fontSize: 22,
-        fontWeight: 700,
-        color: c.valueColor,
-        lineHeight: 1,
-      }}>{value}</div>
-    </div>
-  )
+  borderRadius: 6,
+  display: 'inline-flex',
+  alignItems: 'center',
 }
 
 function RosterRow({ row, isLast, onClick }) {
   const { employee: e, daily, status } = row
   const style = STATUS_STYLES[status] || STATUS_STYLES.not_marked
-  const initials = (e.full_name || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+  const meta = STATUS_META[status] || STATUS_META.not_marked
 
   return (
     <div
@@ -633,7 +514,7 @@ function RosterRow({ row, isLast, onClick }) {
         display: 'flex',
         alignItems: 'center',
         gap: 14,
-        padding: '12px 16px',
+        padding: '11px 18px',
         borderBottom: isLast ? 'none' : '1px solid var(--gray-100)',
         cursor: onClick ? 'pointer' : 'default',
         transition: 'background 0.12s',
@@ -642,23 +523,10 @@ function RosterRow({ row, isLast, onClick }) {
       onMouseLeave={onClick ? ev => { ev.currentTarget.style.background = 'transparent' } : undefined}
       title={onClick ? 'Click to mark / edit attendance' : undefined}
     >
-      <div style={{
-        width: 34, height: 34,
-        borderRadius: '50%',
-        background: status === 'present' || status === 'late'
-          ? 'linear-gradient(135deg, var(--green), var(--green-dark))'
-          : 'var(--gray-200)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: status === 'present' || status === 'late' ? 'white' : 'var(--text-muted)',
-        fontSize: 11.5,
-        fontWeight: 600,
-        flexShrink: 0,
-      }}>{initials}</div>
+      <Avatar name={e.full_name} bg={meta.bg} fg={meta.fg} size={32} />
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text)' }}>
+        <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {e.full_name}
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
@@ -668,107 +536,49 @@ function RosterRow({ row, isLast, onClick }) {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 22, fontSize: 12 }}>
         <div style={{ minWidth: 78, textAlign: 'right' }}>
-          <div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>IN</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>In</div>
           <div style={{ color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
             {formatTimeForDisplay(daily?.in_time)}
             {daily?.late_minutes > 0 && (
-              <span style={{ color: 'var(--gold-dark)', fontSize: 10, marginLeft: 4 }}>+{daily.late_minutes}m</span>
+              <span style={{ color: 'var(--gold-dark)', fontSize: 10, marginLeft: 4, fontWeight: 600 }}>+{daily.late_minutes}m</span>
             )}
           </div>
         </div>
         <div style={{ minWidth: 78, textAlign: 'right' }}>
-          <div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>OUT</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Out</div>
           <div style={{ color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
             {formatTimeForDisplay(daily?.out_time)}
             {daily?.early_leave_minutes > 0 && (
-              <span style={{ color: 'var(--crimson)', fontSize: 10, marginLeft: 4 }}>−{daily.early_leave_minutes}m</span>
+              <span style={{ color: 'var(--crimson)', fontSize: 10, marginLeft: 4, fontWeight: 600 }}>−{daily.early_leave_minutes}m</span>
             )}
           </div>
         </div>
-        <div style={{
-          padding: '4px 10px',
-          background: style.bg,
-          color: style.color,
-          borderRadius: 999,
-          fontSize: 10.5,
-          fontWeight: 600,
-          textTransform: 'uppercase',
-          letterSpacing: '0.04em',
-          minWidth: 64,
-          textAlign: 'center',
-        }}>{style.label}</div>
+        <Pill bg={style.bg} fg={style.color} style={{ minWidth: 76, justifyContent: 'center' }}>{style.label}</Pill>
       </div>
     </div>
   )
 }
 
-function EventRow({ event }) {
+function EventRow({ event, isLast }) {
   const isIn = event.event_type === 'in'
   const employeeName = event.employees?.full_name || 'Unknown'
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'flex-start',
-      gap: 10,
-      padding: '8px 0',
-      borderBottom: '1px solid var(--gray-100)',
-    }}>
-      <div style={{
-        width: 8, height: 8,
-        borderRadius: '50%',
-        background: isIn ? 'var(--green)' : '#60a5fa',
-        marginTop: 6,
-        flexShrink: 0,
-      }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 18px', borderBottom: isLast ? 'none' : '1px solid var(--gray-100)' }}>
+      <Avatar name={employeeName} size={26} bg={isIn ? 'var(--green-light)' : 'var(--gray-100)'} fg={isIn ? 'var(--green-dark)' : 'var(--text-muted)'} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, color: 'var(--text)', fontWeight: 500 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {employeeName}
         </div>
         <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 1 }}>
-          Marked {isIn ? 'IN' : 'OUT'} · {relativeTime(event.event_time)}
+          {relativeTime(event.event_time)}
           {event.face_confidence && (
-            <span style={{ marginLeft: 6, opacity: 0.7 }}>
-              · {Math.round(event.face_confidence * 100)}% conf
-            </span>
+            <span style={{ marginLeft: 6, opacity: 0.7 }}>· {Math.round(event.face_confidence * 100)}% conf</span>
           )}
         </div>
       </div>
-    </div>
-  )
-}
-
-function LoadingState() {
-  return (
-    <div style={{
-      background: 'var(--white)',
-      border: '1px solid var(--gray-200)',
-      borderRadius: 'var(--radius-lg)',
-      padding: 50,
-      textAlign: 'center',
-    }}>
-      <div style={{
-        width: 24, height: 24,
-        border: '2px solid var(--green-muted)',
-        borderTopColor: 'var(--green)',
-        borderRadius: '50%',
-        animation: 'spin 0.8s linear infinite',
-        margin: '0 auto 10px',
-      }} />
-      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading attendance…</div>
-    </div>
-  )
-}
-
-function EmptyState({ message }) {
-  return (
-    <div style={{
-      background: 'var(--white)',
-      border: '1px solid var(--gray-200)',
-      borderRadius: 'var(--radius-lg)',
-      padding: '50px 24px',
-      textAlign: 'center',
-    }}>
-      <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{message}</p>
+      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: isIn ? 'var(--green-dark)' : 'var(--text-muted)', flexShrink: 0 }}>
+        {isIn ? 'In' : 'Out'}
+      </div>
     </div>
   )
 }
@@ -784,13 +594,7 @@ function EmptyState({ message }) {
 function ExemptSection({ rows, open, onToggle, onRowClick }) {
   if (!rows || rows.length === 0) return null
   return (
-    <div style={{
-      marginTop: 14,
-      background: 'var(--white)',
-      border: '1px solid var(--gray-200)',
-      borderRadius: 'var(--radius-lg)',
-      overflow: 'hidden',
-    }}>
+    <Card>
       <button
         onClick={onToggle}
         style={{
@@ -798,34 +602,28 @@ function ExemptSection({ rows, open, onToggle, onRowClick }) {
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          padding: '11px 16px',
-          background: 'var(--gray-50)',
+          padding: '13px 18px',
+          background: 'transparent',
           border: 'none',
+          borderBottom: open ? '1px solid var(--gray-100)' : 'none',
           cursor: 'pointer',
-          fontFamily: 'inherit',
+          fontFamily: 'var(--font-body)',
           textAlign: 'left',
         }}
       >
         <svg
           width="12" height="12" viewBox="0 0 24 24" fill="none"
-          stroke="var(--text-muted)" strokeWidth="2.5"
+          stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round"
           style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}
         >
           <polyline points="9 18 15 12 9 6" />
         </svg>
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
           Exempt from attendance
         </span>
-        <span style={{
-          fontSize: 10,
-          padding: '1px 7px',
-          borderRadius: 999,
-          background: 'var(--gold-light)',
-          color: 'var(--gold-dark)',
-          fontWeight: 600,
-        }}>{rows.length}</span>
-        <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-muted)' }}>
-          Not included in counts above
+        <Pill bg="var(--gold-light)" fg="var(--gold-dark)">{rows.length}</Pill>
+        <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--text-muted)' }}>
+          Not included in the counts above
         </span>
       </button>
       {open && rows.map((row, idx) => (
@@ -836,7 +634,7 @@ function ExemptSection({ rows, open, onToggle, onRowClick }) {
           onClick={() => onRowClick(row)}
         />
       ))}
-    </div>
+    </Card>
   )
 }
 

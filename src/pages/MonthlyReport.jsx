@@ -3,6 +3,9 @@ import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 import { branchLabel } from '../lib/branch'
 import { listDepartments } from '../lib/departments'
+import {
+  Page, PageHead, Card, CardHead, PrimaryButton, SecondaryButton, Chip, LoadingBlock, EmptyBlock, tableHead, tableCell,
+} from '../components/ui'
 
 // "Today" computed in Asia/Kolkata so the default month boundary matches the
 // device's local clock and the daily-rollup trigger.
@@ -43,16 +46,6 @@ function countWorkingDays(startIso, endIso) {
 }
 
 // Toggle-chip style for the PDF department picker (green when selected).
-function deptChip(active) {
-  return {
-    border: `1px solid ${active ? 'var(--green-dark)' : 'var(--gray-200)'}`,
-    background: active ? 'var(--green-dark)' : 'var(--white)',
-    color: active ? 'var(--white)' : 'var(--text)',
-    borderRadius: 'var(--radius-sm)', padding: '5px 12px',
-    fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-  }
-}
-
 export default function MonthlyReport() {
   const { effectiveBranches, currentBranch } = useAuth()
 
@@ -563,267 +556,226 @@ export default function MonthlyReport() {
     return next
   })
 
+  const exportDisabled = loading || rows.length === 0
+
   return (
-    <div style={{ padding: '32px 36px', maxWidth: 1400 }}>
-      <div className="fade-in" style={{ marginBottom: 28 }}>
-        <h1 style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 28, fontWeight: 600,
-          color: 'var(--green-dark)',
-          marginBottom: 6,
-        }}>
-          Monthly Attendance Report
-        </h1>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-          Per-employee summary for payroll. Viewing: <strong style={{ color: currentBranch === null ? 'var(--gold-dark)' : 'var(--green-dark)' }}>{branchLabel(currentBranch)}</strong>
-        </p>
-        <div style={{ width: 40, height: 2, background: 'linear-gradient(90deg, var(--gold), transparent)', marginTop: 10, borderRadius: 1 }} />
-      </div>
+    <Page maxWidth={1400}>
+      <PageHead
+        eyebrow="Monthly report"
+        title={prettyMonth(month)}
+        sub={<>Per-employee attendance summary for payroll · Viewing <strong style={{ color: currentBranch === null ? 'var(--gold-dark)' : 'var(--green-dark)', fontWeight: 600 }}>{branchLabel(currentBranch)}</strong></>}
+        actions={<MonthNav month={month} setMonth={setMonth} />}
+      />
 
-      {/* Toolbar: month picker + CSV export */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
-        background: 'var(--white)', border: '1px solid var(--gray-200)',
-        borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: 16,
-      }}>
-        <label style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
-          Month
-        </label>
-        {/* Cross-browser month picker. <input type="month"> is NOT supported by
-            desktop Safari (renders a dead text box, silently locking the report
-            to the current month) — so explicit arrows + selects instead. */}
-        {(() => {
-          const [yy, mm] = month.split('-').map(Number)
-          const curYear = Number(todayInKolkata().slice(0, 4))
-          const years = []
-          for (let y = 2024; y <= curYear + 1; y++) years.push(y)
-          const setYm = (y, m) => setMonth(`${y}-${String(m).padStart(2, '0')}`)
-          const shift = (delta) => {
-            const d = new Date(yy, mm - 1 + delta, 1)
-            setYm(d.getFullYear(), d.getMonth() + 1)
-          }
-          const ctl = {
-            border: '1px solid var(--gray-200)', borderRadius: 'var(--radius-sm)',
-            padding: '6px 10px', fontSize: 13, fontFamily: 'inherit',
-            color: 'var(--text)', background: 'var(--white)',
-          }
-          const arrow = { ...ctl, cursor: 'pointer', fontWeight: 700, lineHeight: 1, padding: '6px 11px' }
-          return (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <button onClick={() => shift(-1)} style={arrow} title="Previous month">‹</button>
-              <select value={mm} onChange={e => setYm(yy, Number(e.target.value))} style={ctl}>
-                {MONTH_NAMES.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}
+      {/* Exports */}
+      <Card>
+        <CardHead
+          title="Export"
+          sub="CSV for payroll, or branded day-by-day PDF sheets (one A4 page per employee)"
+          right={(
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <select
+                value={empId}
+                onChange={e => setEmpId(e.target.value)}
+                disabled={exportDisabled}
+                style={selectStyle}
+              >
+                <option value="">Employee…</option>
+                {rows.map(r => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}{r.biometric_code !== '—' ? ` (${r.biometric_code})` : ''}
+                  </option>
+                ))}
               </select>
-              <select value={yy} onChange={e => setYm(Number(e.target.value), mm)} style={ctl}>
-                {years.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-              <button onClick={() => shift(1)} style={arrow} title="Next month">›</button>
+              <SecondaryButton
+                onClick={() => downloadEmployeePdf()}
+                disabled={loading || !empId || empBusy || allBusy}
+                title="Branded day-by-day attendance PDF for the selected employee"
+                icon={<DownloadIcon />}
+              >
+                {empBusy ? 'Preparing…' : 'Employee PDF'}
+              </SecondaryButton>
+              <SecondaryButton onClick={downloadCsv} disabled={exportDisabled || allBusy} icon={<DownloadIcon />}>
+                All employees CSV
+              </SecondaryButton>
+              <PrimaryButton
+                onClick={downloadAllEmployeesPdf}
+                disabled={loading || pdfCount === 0 || allBusy || empBusy}
+                title="One PDF with each selected employee's day-by-day attendance sheet (one A4 page per employee)"
+                icon={<DownloadIcon />}
+              >
+                {allBusy
+                  ? `Preparing… ${allProgress}/${pdfCount}`
+                  : `All employees PDF${pdfDepts.size ? ` (${pdfCount})` : ''}`}
+              </PrimaryButton>
+            </div>
+          )}
+        />
+        {/* Departments to include in the "All employees PDF". None selected = all. */}
+        {departments.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, padding: '10px 18px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4 }}>
+              PDF departments
             </span>
-          )
-        })()}
-        <div style={{ flex: 1 }} />
+            <Chip active={pdfDepts.size === 0} onClick={() => setPdfDepts(new Set())}>All</Chip>
+            {departments.map(d => (
+              <Chip key={d.id} active={pdfDepts.has(d.id)} onClick={() => toggleDept(d.id)}>{d.name}</Chip>
+            ))}
+            <span style={{ fontSize: 11.5, color: 'var(--text-muted)', marginLeft: 4 }}>
+              {pdfDepts.size === 0 ? 'all employees' : `${pdfCount} employee${pdfCount === 1 ? '' : 's'}`}
+            </span>
+          </div>
+        )}
+      </Card>
 
-        {/* Per-employee day-by-day export */}
-        <select
-          value={empId}
-          onChange={e => setEmpId(e.target.value)}
-          disabled={loading || rows.length === 0}
-          style={{
-            border: '1px solid var(--gray-200)', borderRadius: 'var(--radius-sm)',
-            padding: '7px 10px', fontSize: 13, fontFamily: 'inherit',
-            color: 'var(--text)', maxWidth: 240, background: 'var(--white)',
-          }}
-        >
-          <option value="">Employee…</option>
-          {rows.map(r => (
-            <option key={r.id} value={r.id}>
-              {r.name}{r.biometric_code !== '—' ? ` (${r.biometric_code})` : ''}
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={() => downloadEmployeePdf()}
-          disabled={loading || !empId || empBusy || allBusy}
-          title="Branded day-by-day attendance PDF for the selected employee"
-          style={{
-            background: 'var(--white)', color: 'var(--green-dark)',
-            border: '1px solid var(--green-dark)', borderRadius: 'var(--radius-sm)',
-            padding: '8px 16px', fontSize: 13, fontWeight: 500,
-            cursor: loading || !empId || empBusy ? 'not-allowed' : 'pointer',
-            opacity: loading || !empId || empBusy ? 0.5 : 1,
-            fontFamily: 'inherit',
-          }}
-        >
-          {empBusy ? 'Preparing…' : '↓ Employee PDF'}
-        </button>
-
-        <button
-          onClick={downloadCsv}
-          disabled={loading || rows.length === 0 || allBusy}
-          style={{
-            background: 'var(--green-dark)', color: 'var(--white)',
-            border: 'none', borderRadius: 'var(--radius-sm)',
-            padding: '8px 16px', fontSize: 13, fontWeight: 500,
-            cursor: loading || rows.length === 0 ? 'not-allowed' : 'pointer',
-            opacity: loading || rows.length === 0 || allBusy ? 0.5 : 1,
-            fontFamily: 'inherit',
-          }}
-        >
-          ↓ All employees CSV
-        </button>
-
-        <button
-          onClick={downloadAllEmployeesPdf}
-          disabled={loading || pdfCount === 0 || allBusy || empBusy}
-          title="One PDF with each selected employee's day-by-day attendance sheet (one A4 page per employee)"
-          style={{
-            background: 'var(--green-dark)', color: 'var(--white)',
-            border: 'none', borderRadius: 'var(--radius-sm)',
-            padding: '8px 16px', fontSize: 13, fontWeight: 500,
-            cursor: loading || pdfCount === 0 || allBusy ? 'not-allowed' : 'pointer',
-            opacity: loading || pdfCount === 0 || allBusy ? 0.5 : 1,
-            fontFamily: 'inherit',
-          }}
-        >
-          {allBusy
-            ? `Preparing… ${allProgress}/${pdfCount}`
-            : `↓ All employees PDF${pdfDepts.size ? ` (${pdfCount})` : ''}`}
-        </button>
-      </div>
-
-      {/* Departments to include in the "All employees PDF". None selected = all. */}
-      {departments.length > 0 && (
-        <div style={{
-          display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center',
-        }}>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 2 }}>
-            PDF departments
-          </span>
-          <button onClick={() => setPdfDepts(new Set())} style={deptChip(pdfDepts.size === 0)}>
-            All
-          </button>
-          {departments.map(d => (
-            <button key={d.id} onClick={() => toggleDept(d.id)} style={deptChip(pdfDepts.has(d.id))}>
-              {d.name}
-            </button>
-          ))}
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 2 }}>
-            {pdfDepts.size === 0 ? 'all employees' : `${pdfCount} employee${pdfCount === 1 ? '' : 's'}`}
-          </span>
-        </div>
-      )}
-
-      {/* Summary cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 18 }}>
-        <SummaryCard label="Working Days" value={stats.workingDays} hint="Mon-Sat in month" />
+      {/* Summary tiles */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14 }}>
+        <SummaryCard label="Working days" value={stats.workingDays} hint="Mon–Sat in month" />
         <SummaryCard label="Holidays" value={stats.holidays} hint="Excludes Sundays" />
-        <SummaryCard label="Expected Days" value={stats.expected} hint="Per active employee" />
-        <SummaryCard label="Total Present" value={totalPresent} hint="Across all employees" />
-        <SummaryCard label="Total Late Mins" value={totalLateMins} hint="Sum across employees" />
+        <SummaryCard label="Expected days" value={stats.expected} hint="Per active employee" />
+        <SummaryCard label="Total present" value={totalPresent} hint="Across all employees" />
+        <SummaryCard label="Total late minutes" value={totalLateMins} hint="Sum across employees" tone={totalLateMins > 0 ? 'var(--gold-dark)' : undefined} />
       </div>
 
       {/* Table */}
-      <div style={{
-        background: 'var(--white)', border: '1px solid var(--gray-200)',
-        borderRadius: 'var(--radius-md)', overflow: 'hidden',
-      }}>
-        {loading && (
-          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
-            Loading…
-          </div>
-        )}
+      <Card>
+        <CardHead
+          title="Employees"
+          sub={loading ? 'Loading…' : `${rows.length} active in scope · ${prettyMonth(month)}`}
+        />
+        {loading && <LoadingBlock label="Building the month…" />}
         {error && (
-          <div style={{ padding: 20, color: 'var(--crimson)', background: 'var(--crimson-light)' }}>
+          <div style={{ padding: '14px 18px', fontSize: 12.5, color: 'var(--crimson)', background: 'var(--crimson-light)' }}>
             Error: {error}
           </div>
         )}
         {!loading && !error && rows.length === 0 && (
-          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
-            No active employees in scope.
-          </div>
+          <EmptyBlock title="No active employees in scope" sub="Switch branch or month to see records." />
         )}
         {!loading && !error && rows.length > 0 && (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: 'var(--gray-50, #f6f7f5)', borderBottom: '1px solid var(--gray-200)' }}>
-                <Th>Name</Th>
-                <Th>Code</Th>
-                <Th>Branch</Th>
-                <Th align="right">Expected</Th>
-                <Th align="right">Present</Th>
-                <Th align="right">Absent</Th>
-                <Th align="right">In-Only</Th>
-                <Th align="right">Late mins</Th>
-                <Th align="right">Early-out mins</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.id} style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--gray-200)' : 'none' }}>
-                  <Td bold>{r.name}</Td>
-                  <Td muted>{r.biometric_code}</Td>
-                  <Td muted>{r.branch}</Td>
-                  <Td align="right">{r.expected}</Td>
-                  <Td align="right" color="var(--green-dark)">{r.present}</Td>
-                  <Td align="right" color={r.absent > 0 ? 'var(--crimson)' : 'var(--text-muted)'}>{r.absent}</Td>
-                  <Td align="right" color={r.inOnly > 0 ? 'var(--gold-dark)' : 'var(--text-muted)'}>{r.inOnly}</Td>
-                  <Td align="right" color={r.lateMins > 0 ? 'var(--gold-dark)' : 'var(--text-muted)'}>{r.lateMins}</Td>
-                  <Td align="right" muted>{r.earlyMins}</Td>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <Th>Name</Th>
+                  <Th>Code</Th>
+                  <Th>Branch</Th>
+                  <Th align="right">Expected</Th>
+                  <Th align="right">Present</Th>
+                  <Th align="right">Absent</Th>
+                  <Th align="right">In-only</Th>
+                  <Th align="right">Late mins</Th>
+                  <Th align="right">Early-out mins</Th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.id} style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--gray-100)' : 'none' }}>
+                    <Td bold>{r.name}</Td>
+                    <Td muted>{r.biometric_code}</Td>
+                    <Td muted>{r.branch}</Td>
+                    <Td align="right">{r.expected}</Td>
+                    <Td align="right" color="var(--green-dark)">{r.present}</Td>
+                    <Td align="right" color={r.absent > 0 ? 'var(--crimson)' : 'var(--text-muted)'}>{r.absent}</Td>
+                    <Td align="right" color={r.inOnly > 0 ? 'var(--gold-dark)' : 'var(--text-muted)'}>{r.inOnly}</Td>
+                    <Td align="right" color={r.lateMins > 0 ? 'var(--gold-dark)' : 'var(--text-muted)'}>{r.lateMins}</Td>
+                    <Td align="right" muted>{r.earlyMins}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
+        <p style={{ fontSize: 11.5, color: 'var(--text-muted)', padding: '12px 18px', borderTop: '1px solid var(--gray-100)', lineHeight: 1.5, margin: 0 }}>
+          Assumes a 6-day work week (Sundays are the weekly off). "Absent" counts only scheduled working days — Mon–Sat, excluding holidays and days not yet elapsed — that have no attendance record; Sundays and holidays are never counted, and leave / school-leave days count as accounted. Late/early-out minutes are 0 until shift expectations are configured.
+        </p>
+      </Card>
+    </Page>
+  )
+}
 
-      <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 16, lineHeight: 1.5 }}>
-        Note: assumes a 6-day work week (Sundays are the weekly off). "Absent" counts only scheduled working days — Mon–Sat, excluding holidays and days not yet elapsed — that have no attendance record; Sundays and holidays are never counted, and leave / school-leave days count as accounted. Late/early-out minutes are 0 until shift expectations are configured.
-      </p>
+// Cross-browser month picker. <input type="month"> is NOT supported by desktop
+// Safari (renders a dead text box, silently locking the report to the current
+// month) — so explicit arrows + selects instead.
+function MonthNav({ month, setMonth }) {
+  const [yy, mm] = month.split('-').map(Number)
+  const curYear = Number(todayInKolkata().slice(0, 4))
+  const years = []
+  for (let y = 2024; y <= curYear + 1; y++) years.push(y)
+  const setYm = (y, m) => setMonth(`${y}-${String(m).padStart(2, '0')}`)
+  const shift = (delta) => {
+    const d = new Date(yy, mm - 1 + delta, 1)
+    setYm(d.getFullYear(), d.getMonth() + 1)
+  }
+  const inner = { border: 'none', background: 'transparent', padding: '0 6px', fontSize: 13, fontFamily: 'var(--font-body)', color: 'var(--text)', outline: 'none', cursor: 'pointer', height: 34 }
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', height: 36, background: 'var(--white)', border: '1px solid var(--gray-200)', borderRadius: 10, padding: '0 4px' }}>
+      <button onClick={() => shift(-1)} style={navArrow} title="Previous month">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="m15 18-6-6 6-6" /></svg>
+      </button>
+      <select value={mm} onChange={e => setYm(yy, Number(e.target.value))} style={inner}>
+        {MONTH_NAMES.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}
+      </select>
+      <select value={yy} onChange={e => setYm(Number(e.target.value), mm)} style={inner}>
+        {years.map(y => <option key={y} value={y}>{y}</option>)}
+      </select>
+      <button onClick={() => shift(1)} style={navArrow} title="Next month">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="m9 18 6-6-6-6" /></svg>
+      </button>
     </div>
   )
 }
 
-function SummaryCard({ label, value, hint }) {
+const navArrow = {
+  background: 'transparent', border: 'none', padding: '4px 8px', cursor: 'pointer',
+  color: 'var(--text-muted)', borderRadius: 6, display: 'inline-flex', alignItems: 'center',
+}
+
+const selectStyle = {
+  height: 36, padding: '0 10px', border: '1px solid var(--gray-200)', borderRadius: 10,
+  fontSize: 13, fontFamily: 'var(--font-body)', color: 'var(--text)', background: 'var(--white)',
+  maxWidth: 240, outline: 'none', cursor: 'pointer',
+}
+
+function DownloadIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M4 21h16" />
+    </svg>
+  )
+}
+
+function SummaryCard({ label, value, hint, tone }) {
   return (
     <div style={{
       background: 'var(--white)',
       border: '1px solid var(--gray-200)',
-      borderRadius: 'var(--radius-md)',
-      padding: '14px 16px',
+      borderRadius: 14,
+      padding: '14px 18px',
+      display: 'flex', flexDirection: 'column', gap: 4,
     }}>
-      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 6 }}>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
         {label}
       </div>
-      <div style={{ fontSize: 24, fontWeight: 600, fontFamily: 'var(--font-display)', color: 'var(--green-dark)', lineHeight: 1 }}>
+      <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-display)', color: tone || 'var(--text)', lineHeight: 1, letterSpacing: '-0.01em' }}>
         {value}
       </div>
-      {hint && <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{hint}</div>}
     </div>
   )
 }
 
 function Th({ children, align = 'left' }) {
-  return (
-    <th style={{
-      padding: '10px 14px',
-      textAlign: align,
-      fontSize: 10.5,
-      color: 'var(--text-muted)',
-      textTransform: 'uppercase',
-      letterSpacing: '0.06em',
-      fontWeight: 600,
-    }}>
-      {children}
-    </th>
-  )
+  return <th style={{ ...tableHead, textAlign: align }}>{children}</th>
 }
 
 function Td({ children, align = 'left', bold, muted, color }) {
   return (
     <td style={{
-      padding: '10px 14px',
+      ...tableCell,
+      padding: '10px 16px',
       textAlign: align,
-      fontWeight: bold ? 600 : 400,
+      fontWeight: bold ? 500 : 400,
       color: color || (muted ? 'var(--text-muted)' : 'var(--text)'),
       fontVariantNumeric: align === 'right' ? 'tabular-nums' : 'normal',
     }}>
