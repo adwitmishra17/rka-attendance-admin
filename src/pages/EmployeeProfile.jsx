@@ -11,6 +11,7 @@ import { listDepartments } from '../lib/departments'
 import { applyBranchFilterArray, isAccessibleArray } from '../lib/branchQuery'
 import { BRANCHES, branchLabel } from '../lib/branch'
 import DocumentsTab from '../components/DocumentsTab'
+import SalaryTab from '../components/SalaryTab'
 import { useTransfer } from '../components/TransferBanner'
 import EmployeeAttendance from './EmployeeAttendance'
 import EmployeeFleetTab from '../components/EmployeeFleetTab'
@@ -310,6 +311,7 @@ export default function EmployeeProfile() {
 
   const tabs = [
     { key: 'overview', label: 'Overview' },
+    ...(isSuperAdmin ? [{ key: 'salary', label: 'Salary' }] : []),
     { key: 'documents', label: 'Documents' },
     { key: 'attendance', label: 'Attendance' },
     { key: 'history', label: 'History' },
@@ -401,6 +403,7 @@ export default function EmployeeProfile() {
               onReveal={reveal}
             />
           )}
+          {activeTab === 'salary' && isSuperAdmin && <SalaryTab employee={employee} onSaved={(u) => setEmployee(u)} />}
           {activeTab === 'documents' && <DocumentsTab employee={employee} />}
           {activeTab === 'fleet' && <EmployeeFleetTab employee={employee} />}
           {activeTab === 'attendance' && <EmployeeAttendance employeeId={employee?.id} />}
