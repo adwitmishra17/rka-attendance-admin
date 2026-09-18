@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
+import SkolixLockup from './SkolixLockup'
 import { auth } from '../lib/firebase'
 import { useAuth, SUPER_ADMIN_EMAIL } from '../App'
 import { branchLabel } from '../lib/branch'
@@ -190,16 +191,7 @@ export default function Layout() {
           height: 'auto',
           display: 'block',
         }} />
-        <div style={{
-          fontSize: 8,
-          color: 'var(--text-muted)',
-          letterSpacing: '0.18em',
-          textTransform: 'uppercase',
-          fontWeight: 500,
-          marginTop: 4,
-        }}>
-          Human Resource Management System
-        </div>
+        <div style={{ marginTop: 6, color: 'var(--text)' }}><SkolixLockup app="People" color="#B45309" height={14} /></div>
       </div>
 
       <nav style={{ flex: 1, padding: '10px 0', overflowY: 'auto' }}>

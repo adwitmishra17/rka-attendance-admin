@@ -25,6 +25,7 @@
 import React, { useState } from 'react'
 import { signInWithPopup, signInWithCustomToken } from 'firebase/auth'
 import { auth, googleProvider } from '../lib/firebase'
+import SkolixLockup from '../components/SkolixLockup'
 
 // Supabase Edge Functions base URL (rka-attendance project).
 const FUNCTIONS_URL = 'https://yegxwxutdalmdubrozrm.supabase.co/functions/v1'
@@ -176,6 +177,7 @@ export default function Login({ authError }) {
         {/* Banner */}
         <div style={{ textAlign: 'center', marginBottom: 36 }}>
           <img src="/banner-light.png" alt="Radhakrishna Academy" style={{ width: '100%', maxWidth: 400, height: 'auto', display: 'inline-block' }} />
+          <div style={{ marginTop: 14, display: 'flex', justifyContent: 'center', color: 'var(--text, #26251F)' }}><SkolixLockup app="People" color="#B45309" height={20} /></div>
         </div>
 
         {/* Glass-card form */}
