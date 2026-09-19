@@ -405,26 +405,28 @@ function EmployeeForm({ employee, onClose, onSaved, adminEmail }) {
       branch_codes: form.branch_codes,
     }
 
-    // Uniqueness guard: a phone or email may belong to at most one active
-    // employee. Login (Google email + phone OTP) resolves a person by these, so
-    // a shared value causes cross-account access — enforce it before the write.
-    const wantEmail = (payload.email || '').toLowerCase()
-    const wantPhone10 = (payload.phone || '').replace(/\D/g, '').slice(-10)
-    if (wantEmail || wantPhone10.length === 10) {
-      const { data: actives, error: chkErr } = await supabaseAdmin
-        .from('employees').select('id, employee_code, full_name, email, phone').eq('is_active', true)
-      if (chkErr) { toast.show('Could not verify uniqueness: ' + chkErr.message, 'error'); setSaving(false); return }
-      const clash = (actives || []).find((o) => {
-        if (isEdit && o.id === employee.id) return false
-        if (wantEmail && (o.email || '').toLowerCase() === wantEmail) return true
-        if (wantPhone10.length === 10 && (o.phone || '').replace(/\D/g, '').slice(-10) === wantPhone10) return true
-        return false
-      })
-      if (clash) {
-        const field = wantEmail && (clash.email || '').toLowerCase() === wantEmail ? 'email' : 'phone'
-        setErrors({ [field]: `This ${field} already belongs to ${clash.full_name} (${clash.employee_code || 'no code'}) — one person per phone/email.` })
-        setSaving(false)
-        return
+    // Dual-branch staff are ONE employee record with `branch_codes` listing
+    // every branch they work at (e.g. Sharafat / Gautam / Dhirendra = MAIN+CITY),
+    // NOT a second record. So a NEW record whose phone or email already belongs
+    // to an active employee is a duplicate — steer the admin to add the branch to
+    // that person's record. Edits are NOT blocked, so an existing split (Pappu)
+    // stays fixable and other-field edits never trip on it.
+    if (!isEdit) {
+      const wantEmail = (payload.email || '').toLowerCase()
+      const wantPhone10 = (payload.phone || '').replace(/\D/g, '').slice(-10)
+      if (wantEmail || wantPhone10.length === 10) {
+        const { data: actives, error: chkErr } = await supabaseAdmin
+          .from('employees').select('employee_code, full_name, email, phone, branch_codes').eq('is_active', true)
+        if (chkErr) { toast.show('Could not verify uniqueness: ' + chkErr.message, 'error'); setSaving(false); return }
+        const clash = (actives || []).find((o) =>
+          (wantEmail && (o.email || '').toLowerCase() === wantEmail) ||
+          (wantPhone10.length === 10 && (o.phone || '').replace(/\D/g, '').slice(-10) === wantPhone10))
+        if (clash) {
+          const field = wantEmail && (clash.email || '').toLowerCase() === wantEmail ? 'email' : 'phone'
+          setErrors({ [field]: `${clash.full_name} (${clash.employee_code}) already has a record${clash.branch_codes?.length ? ` at ${clash.branch_codes.join('+')}` : ''} with this ${field}. For a dual-branch person, EDIT that record and add this branch — don't create a second record.` })
+          setSaving(false)
+          return
+        }
       }
     }
 

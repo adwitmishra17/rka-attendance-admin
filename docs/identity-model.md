@@ -84,6 +84,29 @@ changing their admin identity.
 4. **Re-key mirrors + rules to `emp_id`**, switch the remaining apps, retire the
    `phone_…` admin-docid hack (phone stays a login method, never a key).
 
+## Dual-branch staff (works at MAIN and CITY)
+
+**One person = one employee record, with `branch_codes` listing every branch
+they work at** (e.g. `[MAIN, CITY]`). It is **not** two records. Attendance from
+both branches' devices accrues to that single record; payroll and reports read
+`branch_codes`. This is already the norm — Sharafat Ali, Gautam Shekhar and
+Dhirendra Kumar each have one active `[MAIN,CITY]` record (Dhirendra's old
+CITY-only duplicate was retired to get there).
+
+- **Never a second record per branch.** Two active records for one person split
+  their attendance, break login (which record?), and read as a duplicate. The
+  Employees editor blocks creating a new record whose phone/email already belongs
+  to an active employee, and tells the admin to add the branch to that record.
+- **Consolidating a split person:** keep one record (set `branch_codes` to all
+  branches), re-point the other record's attendance_daily rows to it (dates
+  already present on the survivor are already covered — nothing lost), then
+  **deactivate** the extra record (don't delete — keeps the audit trail). This
+  is how Dhirendra was fixed; Pappu Kumar (RKA-1023 MAIN + RKA-2053 CITY) is the
+  last one still to consolidate.
+- A truly shared phone across two *different* people is a separate problem the
+  canonical `person_id` (below) solves; the branch_codes rule covers the common
+  dual-branch case without it.
+
 ## Why it's robust
 A phone change or carrier reassignment becomes a simple attribute update — no
 identity churn, no collision — because the phone was never the key.
