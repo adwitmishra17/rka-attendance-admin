@@ -268,7 +268,16 @@ export default function Layout() {
           marginTop: 10, textAlign: 'center', fontSize: 9.5,
           color: 'var(--text-muted)', lineHeight: 1.4,
         }}>
-          crafted with <span style={{ color: 'var(--crimson)' }}>♥</span> by Radhakrishna Educational Society
+          <a href="https://skolix.app" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            Powered by
+            <svg width="12" height="12" viewBox="0 0 64 64" aria-hidden="true" style={{ display: 'block', flexShrink: 0 }}>
+              <g fill="none" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M44 14 L20 24 L44 34 L20 44 L44 54" stroke="currentColor" />
+                <path d="M44 34 L20 44" stroke="#F6B73C" />
+              </g>
+            </svg>
+            skolix.app
+          </a>
         </div>
       </div>
     </div>
