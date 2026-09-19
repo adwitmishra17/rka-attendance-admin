@@ -113,11 +113,22 @@ export async function createUserWithEmail(email: string): Promise<string> {
   return data.localId as string;
 }
 
-/** Mint a Firebase custom token for a UID. The client calls signInWithCustomToken(). */
-export async function mintCustomToken(uid: string): Promise<string> {
+/** Mint a Firebase custom token for a UID. The client calls signInWithCustomToken().
+ *  Optional developerClaims go in the token's `claims` map; Firebase promotes
+ *  them to top-level claims on the resulting ID token (readable server-side via
+ *  verifyIdToken and client-side via getIdTokenResult().claims). Used to carry
+ *  the OTP-verified phone so phone-only identities can be resolved downstream. */
+export async function mintCustomToken(
+  uid: string,
+  developerClaims: Record<string, unknown> = {},
+): Promise<string> {
   const key = await privateKey();
   const now = Math.floor(Date.now() / 1000);
-  return await new SignJWT({ uid })
+  const payload: Record<string, unknown> = { uid };
+  if (developerClaims && Object.keys(developerClaims).length > 0) {
+    payload.claims = developerClaims;
+  }
+  return await new SignJWT(payload)
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
     .setIssuer(CLIENT_EMAIL)
     .setSubject(CLIENT_EMAIL)

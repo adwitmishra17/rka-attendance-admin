@@ -181,8 +181,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 6. Mint the custom token.
-    const customToken = await mintCustomToken(uid);
+    // 6. Mint the custom token. Carry the OTP-verified phone as a claim so apps
+    //    that key on it (e.g. the teacher app resolving a phone-only admin who is
+    //    also a teacher) can identify the person without changing the uid.
+    const customToken = await mintCustomToken(uid, { otp_phone: canonical });
 
     // 7. Consume the OTP so it cannot be reused.
     await supabase
