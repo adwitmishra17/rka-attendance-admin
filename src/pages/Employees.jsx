@@ -405,6 +405,29 @@ function EmployeeForm({ employee, onClose, onSaved, adminEmail }) {
       branch_codes: form.branch_codes,
     }
 
+    // Uniqueness guard: a phone or email may belong to at most one active
+    // employee. Login (Google email + phone OTP) resolves a person by these, so
+    // a shared value causes cross-account access — enforce it before the write.
+    const wantEmail = (payload.email || '').toLowerCase()
+    const wantPhone10 = (payload.phone || '').replace(/\D/g, '').slice(-10)
+    if (wantEmail || wantPhone10.length === 10) {
+      const { data: actives, error: chkErr } = await supabaseAdmin
+        .from('employees').select('id, employee_code, full_name, email, phone').eq('is_active', true)
+      if (chkErr) { toast.show('Could not verify uniqueness: ' + chkErr.message, 'error'); setSaving(false); return }
+      const clash = (actives || []).find((o) => {
+        if (isEdit && o.id === employee.id) return false
+        if (wantEmail && (o.email || '').toLowerCase() === wantEmail) return true
+        if (wantPhone10.length === 10 && (o.phone || '').replace(/\D/g, '').slice(-10) === wantPhone10) return true
+        return false
+      })
+      if (clash) {
+        const field = wantEmail && (clash.email || '').toLowerCase() === wantEmail ? 'email' : 'phone'
+        setErrors({ [field]: `This ${field} already belongs to ${clash.full_name} (${clash.employee_code || 'no code'}) — one person per phone/email.` })
+        setSaving(false)
+        return
+      }
+    }
+
     let res
     if (isEdit) {
       res = await supabaseAdmin.from('employees').update(payload).eq('id', employee.id)
