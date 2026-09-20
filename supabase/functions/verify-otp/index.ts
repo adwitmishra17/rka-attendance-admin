@@ -37,6 +37,32 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
+// Cross-project writer → the SMS app's notifications log, so its Communications
+// screen can show teacher OTP logins. Best-effort: a logging failure must never
+// break login. Only fires for source==='teacher-app' (verify-otp is shared by
+// the HRMS/Tracker admin logins too, which we don't record here).
+const SMS_URL = Deno.env.get("SMS_SUPABASE_URL");
+const SMS_KEY = Deno.env.get("SMS_SERVICE_ROLE_KEY");
+async function logTeacherLogin(phone: string) {
+  try {
+    if (!SMS_URL || !SMS_KEY) return;
+    const sms = createClient(SMS_URL, SMS_KEY, { auth: { persistSession: false } });
+    const now = new Date().toISOString();
+    await sms.from("notifications").insert({
+      event_type: "teacher_login_otp",
+      channel: "sms",
+      recipient_phone: phone,
+      rendered_message: "Teacher OTP login",
+      status: "delivered",
+      provider: "teacher-app",
+      sent_at: now,
+      delivered_at: now,
+    });
+  } catch (e) {
+    console.error("[verify-otp] teacher login log failed", String(e));
+  }
+}
+
 const SUPERADMIN_PHONE = Deno.env.get("SUPERADMIN_PHONE") ?? "";
 const SUPERADMIN_UID = Deno.env.get("SUPERADMIN_UID") ?? "";
 
@@ -94,7 +120,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { phone, code, dryRun } = await req.json().catch(() => ({}));
+    const { phone, code, dryRun, source } = await req.json().catch(() => ({}));
     if (!phone || typeof phone !== "string") {
       return json({ error: "Phone number is required." }, 400, origin);
     }
@@ -185,6 +211,9 @@ Deno.serve(async (req) => {
     //    that key on it (e.g. the teacher app resolving a phone-only admin who is
     //    also a teacher) can identify the person without changing the uid.
     const customToken = await mintCustomToken(uid, { otp_phone: canonical });
+
+    // Record the teacher-app OTP login in the SMS Communications log (best-effort).
+    if (source === "teacher-app") await logTeacherLogin(canonical);
 
     // 7. Consume the OTP so it cannot be reused.
     await supabase
