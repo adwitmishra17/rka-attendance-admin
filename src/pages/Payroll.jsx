@@ -76,13 +76,6 @@ export default function Payroll() {
     setBusy('')
   }
 
-  const filtered = useMemo(() => {
-    const t = q.trim().toLowerCase()
-    const rows = [...items].sort((a, b) => (b.net_pay || 0) - (a.net_pay || 0))
-    if (!t) return rows
-    return rows.filter((r) => (r._name || '').toLowerCase().includes(t))
-  }, [items, q])
-
   // enrich items with employee name/code (seed stores bank snapshot but not name) — fetch lazily
   const [empMap, setEmpMap] = useState({})
   useEffect(() => {
@@ -95,6 +88,18 @@ export default function Payroll() {
         })
     })
   }, [items]) // eslint-disable-line
+
+  // Names/codes live in empMap (fetched above), NOT on the payroll item, so the
+  // search must look them up by employee_id — matches what the table displays.
+  const filtered = useMemo(() => {
+    const t = q.trim().toLowerCase()
+    const rows = [...items].sort((a, b) => (b.net_pay || 0) - (a.net_pay || 0))
+    if (!t) return rows
+    return rows.filter((r) => {
+      const e = empMap[r.employee_id] || {}
+      return `${e.full_name || r._name || ''} ${e.employee_code || ''}`.toLowerCase().includes(t)
+    })
+  }, [items, q, empMap])
 
   const totals = useMemo(() => items.reduce((a, i) => ({
     gross: a.gross + Number(i.gross || 0), ded: a.ded + Number(i.total_deductions || 0) + Number(i.lop_amount || 0),
