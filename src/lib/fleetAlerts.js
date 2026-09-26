@@ -7,9 +7,9 @@
 // ============================================================================
 
 import { supabaseAdmin } from './supabase'
+import { adminFnHeaders } from './fnAuth'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const ADMIN_SHARED_SECRET = import.meta.env.VITE_HRMS_ADMIN_SECRET
 
 export const BRANCH_FILTERS = [
   { value: 'ALL',  label: 'All branches' },
@@ -113,15 +113,9 @@ export async function softDeleteRecipient({ id, deletedByEmail }) {
 // TEST SEND — invoke the digest function for a single recipient
 // ----------------------------------------------------------------------------
 export async function sendTestDigest(recipientId) {
-  if (!ADMIN_SHARED_SECRET) {
-    throw new Error('VITE_HRMS_ADMIN_SECRET not set in .env.local')
-  }
   const resp = await fetch(`${SUPABASE_URL}/functions/v1/fleet-expiry-digest`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-admin-secret': ADMIN_SHARED_SECRET,
-    },
+    headers: await adminFnHeaders(),
     body: JSON.stringify({ test: true, recipientId }),
   })
   const result = await resp.json().catch(() => ({}))

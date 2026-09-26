@@ -11,13 +11,13 @@
 
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
+import { verifyHrmsAdmin } from "../_shared/hrmsAdmin.ts"
 import { AwsClient } from "https://esm.sh/aws4fetch@1.0.17"
 
 const R2_ACCOUNT_ID = Deno.env.get("R2_ACCOUNT_ID")!
 const R2_ACCESS_KEY_ID = Deno.env.get("R2_ACCESS_KEY_ID")!
 const R2_SECRET_ACCESS_KEY = Deno.env.get("R2_SECRET_ACCESS_KEY")!
 const R2_BUCKET = Deno.env.get("R2_BUCKET")!
-const ADMIN_SHARED_SECRET = Deno.env.get("ADMIN_SHARED_SECRET")!
 
 const ALLOWED_MIMES = new Set([
   "application/pdf",
@@ -34,7 +34,7 @@ const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-secret",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-firebase-token",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
@@ -44,12 +44,19 @@ serve(async (req) => {
   }
 
   try {
-    const adminSecret = req.headers.get("x-admin-secret")
-    if (!ADMIN_SHARED_SECRET || adminSecret !== ADMIN_SHARED_SECRET) {
+    // Caller must be a signed-in, active HRMS admin (verified Firebase ID
+    // token in x-firebase-token). The old x-admin-secret shipped in the public
+    // bundle, so it authenticated nobody.
+    const admin = await verifyHrmsAdmin(req)
+    if (!admin) {
       return json({ error: "unauthorized" }, 401)
     }
 
     const body = await req.json()
+    // Audit fields come from the verified identity, not the request body.
+    if (body && typeof body === "object") {
+      body.requestedByEmail = body.uploadedByEmail = admin.email ?? admin.uid
+    }
     const { ownerType, ownerId, filename, sizeBytes, mimeType } = body || {}
 
     // ownerType drives the R2 prefix

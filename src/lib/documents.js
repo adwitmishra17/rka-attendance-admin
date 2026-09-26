@@ -16,10 +16,9 @@
 // ============================================================================
 
 import { supabaseAdmin } from './supabase'
-import { auth } from './firebase'
+import { adminFnHeaders } from './fnAuth'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const ADMIN_SHARED_SECRET = import.meta.env.VITE_HRMS_ADMIN_SECRET
 
 // ----------------------------------------------------------------------------
 // Helpers
@@ -29,21 +28,7 @@ function fnUrl(name) {
 }
 
 async function callFn(name, body) {
-  if (!ADMIN_SHARED_SECRET) {
-    throw new Error('VITE_HRMS_ADMIN_SECRET not set in .env.local')
-  }
-  const headers = {
-    'Content-Type': 'application/json',
-    'x-admin-secret': ADMIN_SHARED_SECRET,
-    // Supabase functions require the anon key in Authorization
-    'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-  }
-  // Attach the signed-in admin's verifiable Firebase identity so server-side
-  // gates (e.g. the document lock in presign-download) can trust who's calling.
-  try {
-    const t = await auth?.currentUser?.getIdToken?.()
-    if (t) headers['x-firebase-token'] = t
-  } catch { /* no user / token unavailable — server enforces */ }
+  const headers = await adminFnHeaders()
   const resp = await fetch(fnUrl(name), {
     method: 'POST',
     headers,

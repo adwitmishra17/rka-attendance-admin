@@ -14,9 +14,9 @@
 // ============================================================================
 
 import { supabaseAdmin } from './supabase'
+import { adminFnHeaders } from './fnAuth'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const ADMIN_SHARED_SECRET = import.meta.env.VITE_HRMS_ADMIN_SECRET
 
 
 // ----------------------------------------------------------------------------
@@ -27,16 +27,9 @@ function fnUrl(name) {
 }
 
 async function callFn(name, body) {
-  if (!ADMIN_SHARED_SECRET) {
-    throw new Error('VITE_HRMS_ADMIN_SECRET not set in .env.local')
-  }
   const resp = await fetch(fnUrl(name), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-admin-secret': ADMIN_SHARED_SECRET,
-      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-    },
+    headers: await adminFnHeaders(),
     body: JSON.stringify(body),
   })
   if (!resp.ok) {

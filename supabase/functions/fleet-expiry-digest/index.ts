@@ -17,6 +17,7 @@
 
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
+import { verifyHrmsAdmin } from "../_shared/hrmsAdmin.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0"
 
 const ADMIN_SHARED_SECRET = Deno.env.get("ADMIN_SHARED_SECRET")!
@@ -30,7 +31,7 @@ const DASHBOARD_URL = "https://hrms.rkacademyballia.in"   // edit to your deploy
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-secret",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-secret, x-firebase-token",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
@@ -40,8 +41,12 @@ serve(async (req) => {
   }
 
   try {
+    // Two callers: the daily pg_cron job (x-admin-secret — a server-side
+    // secret, no longer shipped in the HRMS bundle) and an admin's "send test"
+    // from the HRMS UI (verified Firebase token).
     const adminSecret = req.headers.get("x-admin-secret")
-    if (!ADMIN_SHARED_SECRET || adminSecret !== ADMIN_SHARED_SECRET) {
+    const cronOk = !!ADMIN_SHARED_SECRET && adminSecret === ADMIN_SHARED_SECRET
+    if (!cronOk && !(await verifyHrmsAdmin(req))) {
       return json({ error: "unauthorized" }, 401)
     }
 

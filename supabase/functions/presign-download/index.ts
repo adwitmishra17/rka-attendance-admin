@@ -13,6 +13,7 @@
 
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
+import { verifyHrmsAdmin } from "../_shared/hrmsAdmin.ts"
 import { AwsClient } from "https://esm.sh/aws4fetch@1.0.17"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0"
 import { createRemoteJWKSet, jwtVerify } from "https://esm.sh/jose@5.9.6"
@@ -21,7 +22,6 @@ const R2_ACCOUNT_ID = Deno.env.get("R2_ACCOUNT_ID")!
 const R2_ACCESS_KEY_ID = Deno.env.get("R2_ACCESS_KEY_ID")!
 const R2_SECRET_ACCESS_KEY = Deno.env.get("R2_SECRET_ACCESS_KEY")!
 const R2_BUCKET = Deno.env.get("R2_BUCKET")!
-const ADMIN_SHARED_SECRET = Deno.env.get("ADMIN_SHARED_SECRET")!
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 const FIREBASE_PROJECT_ID = Deno.env.get("FIREBASE_PROJECT_ID")!
@@ -33,7 +33,7 @@ const FIREBASE_JWKS = createRemoteJWKSet(
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-secret, x-firebase-token",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-firebase-token",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
@@ -43,12 +43,19 @@ serve(async (req) => {
   }
 
   try {
-    const adminSecret = req.headers.get("x-admin-secret")
-    if (!ADMIN_SHARED_SECRET || adminSecret !== ADMIN_SHARED_SECRET) {
+    // Caller must be a signed-in, active HRMS admin (verified Firebase ID
+    // token in x-firebase-token). The old x-admin-secret shipped in the public
+    // bundle, so it authenticated nobody.
+    const admin = await verifyHrmsAdmin(req)
+    if (!admin) {
       return json({ error: "unauthorized" }, 401)
     }
 
     const body = await req.json()
+    // Audit fields come from the verified identity, not the request body.
+    if (body && typeof body === "object") {
+      body.requestedByEmail = body.uploadedByEmail = admin.email ?? admin.uid
+    }
     const { documentId, requestedByEmail } = body || {}
 
     if (!documentId || !Number.isFinite(documentId)) {

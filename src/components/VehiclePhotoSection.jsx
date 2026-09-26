@@ -3,6 +3,7 @@ import { useAuth } from '../App'
 import { useToast } from './Toast'
 import { supabaseAdmin } from '../lib/supabase'
 import { uploadFleetDocument, softDeleteFleetDocument, formatBytes } from '../lib/fleetDocuments'
+import { adminFnHeaders } from '../lib/fnAuth'
 
 // ============================================================================
 // VEHICLE PHOTO  (header thumbnail)
@@ -18,8 +19,6 @@ import { uploadFleetDocument, softDeleteFleetDocument, formatBytes } from '../li
 // ============================================================================
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const ADMIN_SECRET = import.meta.env.VITE_HRMS_ADMIN_SECRET
-const ANON_KEY     = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 const ACCEPT = '.jpg,.jpeg,.png,.webp,.heic,.heif'
 const MAX_BYTES = 10 * 1024 * 1024
@@ -62,11 +61,7 @@ export default function VehiclePhotoSection({ vehicle }) {
   async function fetchUrl(docId) {
     const resp = await fetch(`${SUPABASE_URL}/functions/v1/fleet-presign-download`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-admin-secret': ADMIN_SECRET,
-        'Authorization': `Bearer ${ANON_KEY}`,
-      },
+      headers: await adminFnHeaders(),
       body: JSON.stringify({ ownerType: 'vehicle', documentId: docId, requestedByEmail: user.email }),
     })
     const j = await resp.json().catch(() => ({}))

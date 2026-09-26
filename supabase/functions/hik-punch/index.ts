@@ -13,7 +13,7 @@
 //   1. `?token=<secret>` query string — preferred for the device, since
 //      Hikvision firmwares vary in whether they send Basic Auth properly.
 //   2. HTTP Basic Auth — preferred for curl/manual testing. Username can be
-//      anything; password = HIK_SHARED_SECRET (falls back to ADMIN_SHARED_SECRET).
+//      anything; password = HIK_SHARED_SECRET (no fallback).
 //
 // Idempotency: dedupe key is (kiosk_device_id, device_event_id). Webhook
 //              retries from the device for the same serialNo are silently
@@ -31,7 +31,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4"
 // ----- env -----------------------------------------------------------------
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-const HIK_SECRET   = Deno.env.get("HIK_SHARED_SECRET") || Deno.env.get("ADMIN_SHARED_SECRET")
+const HIK_SECRET   = Deno.env.get("HIK_SHARED_SECRET")
 
 // ----- CORS (mostly for manual curl testing from a browser) ---------------
 const corsHeaders = {
