@@ -123,3 +123,50 @@ export async function findEmployeeByPhone(
   if (rows.length === 0) return null;
   return rows.find((r) => r.email) ?? rows[0];
 }
+
+/**
+ * Is this email a Firestore `admins` identity (email-keyed docId or an
+ * `email` field)? verify-otp refuses to mint admin identities through the
+ * HRMS employees path — an employee row's phone is editable from HRMS, so
+ * trusting it for an admin email would let anyone who can edit employees
+ * sign in as that admin. Admins log in by OTP only via the phone on their
+ * own admins doc (findAdminByPhone).
+ */
+export async function isAdminEmail(email: string): Promise<boolean> {
+  const e = email.toLowerCase();
+  const token = await getGoogleAccessToken(
+    "https://www.googleapis.com/auth/datastore",
+  );
+  const base =
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+  const direct = await fetch(`${base}/admins/${encodeURIComponent(e)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (direct.ok) return true;
+  if (direct.status !== 404) {
+    throw new Error(`admins get failed: ${await direct.text()}`);
+  }
+  const res = await fetch(`${base}:runQuery`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: "admins" }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: "email" },
+            op: "EQUAL",
+            value: { stringValue: e },
+          },
+        },
+        limit: 1,
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`admins runQuery failed: ${await res.text()}`);
+  const rows = await res.json();
+  return Array.isArray(rows) && rows.some((r) => r?.document);
+}

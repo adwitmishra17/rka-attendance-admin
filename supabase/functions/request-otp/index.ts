@@ -8,10 +8,6 @@
 // Phone matching is format-proof (last 10 digits), so "+91XXXXXXXXXX"
 // and bare "XXXXXXXXXX" both work regardless of how the record stores it.
 //
-// { "phone": "...", "dryRun": true } answers ONLY the authorization
-// question ({ authorized, via }) — no OTP is generated, stored, or sent.
-// Used for wiring verification; leaks nothing the normal 404 doesn't.
-//
 // Deploy with --no-verify-jwt — callers are not yet authenticated.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -69,7 +65,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { phone, dryRun } = await req.json().catch(() => ({}));
+    const { phone } = await req.json().catch(() => ({}));
     if (!phone || typeof phone !== "string") {
       return json({ error: "Phone number is required." }, 400, origin);
     }
@@ -81,9 +77,6 @@ Deno.serve(async (req) => {
 
     // 1. Confirm the number belongs to someone we know.
     const via = await authorize(canonical, last10);
-    if (dryRun === true) {
-      return json({ ok: true, dry_run: true, authorized: via !== null, via }, 200, origin);
-    }
     if (!via) {
       return json(
         { error: "This mobile number isn't on file. Please use Google sign-in." },

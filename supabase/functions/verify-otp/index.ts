@@ -12,9 +12,9 @@
 //   3. HRMS `employees`   — last-10-digit phone match → row's email →
 //      Firebase user (created on the fly if missing).
 //
-// { "phone": "...", "dryRun": true } skips the OTP check and reports how
-// the phone WOULD resolve ({ resolves, uid_source }) with no side effects
-// (no user creation, no token, nothing consumed). Wiring verification only.
+//      Never for an admin / super-admin email: employee phones are editable
+//      from HRMS, so that would hand admin power to anyone who can edit an
+//      employee row. Admins use the phone on their own admins doc (step 2).
 //
 // Deploy with --no-verify-jwt — callers are not yet authenticated.
 
@@ -29,6 +29,7 @@ import {
 import {
   findAdminByPhone,
   findEmployeeByPhone,
+  isAdminEmail,
   phoneForms,
 } from "../_shared/identity.ts";
 
@@ -104,7 +105,9 @@ async function resolveIdentity(
   const emp = await findEmployeeByPhone(supabase, last10);
   if (emp?.email) {
     const email = emp.email.toLowerCase();
+    if (await isAdminEmail(email)) return null;
     const uid = await getUidByEmail(email);
+    if (uid && SUPERADMIN_UID && uid === SUPERADMIN_UID) return null;
     return { via: "employees", uid, createEmail: uid ? null : email, fixedUid: null };
   }
   return null;
@@ -120,7 +123,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { phone, code, dryRun, source } = await req.json().catch(() => ({}));
+    const { phone, code, source } = await req.json().catch(() => ({}));
     if (!phone || typeof phone !== "string") {
       return json({ error: "Phone number is required." }, 400, origin);
     }
@@ -129,18 +132,6 @@ Deno.serve(async (req) => {
       return json({ error: "Enter a valid 10-digit mobile number." }, 400, origin);
     }
     const { canonical, last10 } = forms;
-
-    if (dryRun === true) {
-      const res = await resolveIdentity(canonical, last10);
-      return json({
-        ok: true,
-        dry_run: true,
-        resolves: res?.via ?? null,
-        uid_source: res
-          ? (res.uid ? "existing_user" : res.createEmail ? "will_create_by_email" : "docid_uid")
-          : null,
-      }, 200, origin);
-    }
 
     const submitted = String(code ?? "").trim();
     if (!/^\d{6}$/.test(submitted)) {
@@ -171,8 +162,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 3. Attempt cap.
-    if ((rec.attempts ?? 0) >= MAX_ATTEMPTS) {
+    // 3. Attempt cap. Claim this attempt BEFORE comparing, with a
+    //    compare-and-set on the value we read: of several concurrent guesses
+    //    only one can move attempts from n to n+1, so parallel requests
+    //    cannot exceed MAX_ATTEMPTS.
+    const attempts = rec.attempts ?? 0;
+    if (attempts >= MAX_ATTEMPTS) {
       await supabase.from("otp_requests").update({ otp_hash: null }).eq(
         "phone",
         canonical,
@@ -184,14 +179,35 @@ Deno.serve(async (req) => {
       );
     }
 
+    const { data: claimed, error: claimErr } = await supabase
+      .from("otp_requests")
+      .update({ attempts: attempts + 1 })
+      .eq("phone", canonical)
+      .eq("attempts", attempts)
+      .eq("otp_hash", rec.otp_hash)
+      .select("phone");
+    if (claimErr) throw claimErr;
+    if (!claimed || claimed.length !== 1) {
+      return json({ error: "Please try again." }, 409, origin);
+    }
+
     // 4. Compare.
     const candidate = await hashOtp(submitted);
     if (candidate !== rec.otp_hash) {
-      await supabase
-        .from("otp_requests")
-        .update({ attempts: (rec.attempts ?? 0) + 1 })
-        .eq("phone", canonical);
       return json({ error: "Incorrect OTP." }, 401, origin);
+    }
+
+    // 4b. Consume the OTP now (single-use even under concurrency): only the
+    //     request that clears this exact hash may go on to mint a token.
+    const { data: consumed, error: consumeErr } = await supabase
+      .from("otp_requests")
+      .update({ otp_hash: null, consumed_at: new Date().toISOString() })
+      .eq("phone", canonical)
+      .eq("otp_hash", rec.otp_hash)
+      .select("phone");
+    if (consumeErr) throw consumeErr;
+    if (!consumed || consumed.length !== 1) {
+      return json({ error: "No active OTP. Please request a new one." }, 400, origin);
     }
 
     // 5. Resolve the Firebase identity.
@@ -214,12 +230,6 @@ Deno.serve(async (req) => {
 
     // Record the teacher-app OTP login in the SMS Communications log (best-effort).
     if (source === "teacher-app") await logTeacherLogin(canonical);
-
-    // 7. Consume the OTP so it cannot be reused.
-    await supabase
-      .from("otp_requests")
-      .update({ otp_hash: null, consumed_at: new Date().toISOString() })
-      .eq("phone", canonical);
 
     return json({ ok: true, customToken }, 200, origin);
   } catch (e) {
