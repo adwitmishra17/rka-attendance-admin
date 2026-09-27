@@ -12,6 +12,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { json } from "../_shared/cors.ts";
+import { serviceRoleKey } from "../_shared/serviceKey.ts"
 import { generateOtp, hashOtp, toSmsNumber } from "../_shared/otp.ts";
 import {
   findAdminByPhone,
@@ -21,7 +22,7 @@ import {
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  serviceRoleKey(),
 );
 
 const BULKSMS_API_KEY = Deno.env.get("BULKSMS_API_KEY") ?? "";

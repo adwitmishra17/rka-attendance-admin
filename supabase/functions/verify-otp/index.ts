@@ -20,6 +20,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { json } from "../_shared/cors.ts";
+import { serviceRoleKey } from "../_shared/serviceKey.ts"
 import { hashOtp } from "../_shared/otp.ts";
 import {
   createUserWithEmail,
@@ -35,7 +36,7 @@ import {
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  serviceRoleKey(),
 );
 
 // Cross-project writer → the SMS app's notifications log, so its Communications

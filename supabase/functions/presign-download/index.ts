@@ -15,15 +15,16 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { verifyHrmsAdmin } from "../_shared/hrmsAdmin.ts"
 import { AwsClient } from "https://esm.sh/aws4fetch@1.0.17"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0"
+import { createClient } from "npm:@supabase/supabase-js@2"
 import { createRemoteJWKSet, jwtVerify } from "https://esm.sh/jose@5.9.6"
+import { serviceRoleKey } from "../_shared/serviceKey.ts"
 
 const R2_ACCOUNT_ID = Deno.env.get("R2_ACCOUNT_ID")!
 const R2_ACCESS_KEY_ID = Deno.env.get("R2_ACCESS_KEY_ID")!
 const R2_SECRET_ACCESS_KEY = Deno.env.get("R2_SECRET_ACCESS_KEY")!
 const R2_BUCKET = Deno.env.get("R2_BUCKET")!
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+const SUPABASE_SERVICE_ROLE_KEY = serviceRoleKey()
 const FIREBASE_PROJECT_ID = Deno.env.get("FIREBASE_PROJECT_ID")!
 // The owner super admin (matches HRMS src/App.jsx SUPER_ADMIN_EMAIL).
 const SUPER_ADMIN_EMAIL = "adwit@rkacademyballia.in"

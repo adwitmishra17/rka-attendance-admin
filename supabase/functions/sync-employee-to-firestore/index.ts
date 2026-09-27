@@ -32,7 +32,8 @@
 // =========================================================================
 
 import { importPKCS8, SignJWT } from "npm:jose@5.9.6";
-import { createClient } from "npm:@supabase/supabase-js@2.45.4";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { serviceRoleKey } from "../_shared/serviceKey.ts"
 
 // ---------- env / constants ---------------------------------------------
 
@@ -43,7 +44,7 @@ const FIREBASE_PROJECT_ID = SERVICE_ACCOUNT.project_id;
 const TEACHER_DEPT_NAME = Deno.env.get("TEACHER_DEPT_NAME") ?? "Teachers";
 const WEBHOOK_SECRET = Deno.env.get("WEBHOOK_SECRET") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_SERVICE_ROLE_KEY = serviceRoleKey();
 
 if (!FIREBASE_PROJECT_ID) {
   console.error(

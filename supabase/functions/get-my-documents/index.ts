@@ -14,11 +14,12 @@
 // =========================================================================
 
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.9.6";
-import { createClient } from "npm:@supabase/supabase-js@2.45.4";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { serviceRoleKey } from "../_shared/serviceKey.ts"
 
 const FIREBASE_PROJECT_ID = Deno.env.get("FIREBASE_PROJECT_ID")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_SERVICE_ROLE_KEY = serviceRoleKey();
 
 const FIREBASE_JWKS = createRemoteJWKSet(
   new URL(

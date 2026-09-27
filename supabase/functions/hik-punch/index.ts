@@ -26,11 +26,12 @@
 
 // @ts-nocheck — Deno runtime, types resolved at deploy time
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4"
+import { createClient } from "npm:@supabase/supabase-js@2"
+import { serviceRoleKey } from "../_shared/serviceKey.ts"
 
 // ----- env -----------------------------------------------------------------
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!
-const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+const SERVICE_KEY  = serviceRoleKey()
 const HIK_SECRET   = Deno.env.get("HIK_SHARED_SECRET")
 
 // ----- CORS (mostly for manual curl testing from a browser) ---------------

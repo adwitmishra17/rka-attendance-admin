@@ -18,11 +18,12 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { verifyHrmsAdmin } from "../_shared/hrmsAdmin.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0"
+import { createClient } from "npm:@supabase/supabase-js@2"
+import { serviceRoleKey } from "../_shared/serviceKey.ts"
 
 const ADMIN_SHARED_SECRET = Deno.env.get("ADMIN_SHARED_SECRET")!
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+const SUPABASE_SERVICE_ROLE_KEY = serviceRoleKey()
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!
 
 // Change these two if needed:
