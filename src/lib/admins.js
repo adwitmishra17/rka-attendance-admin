@@ -46,6 +46,12 @@ import {
 import { db } from './firebase'
 import { SUPER_ADMIN_EMAIL } from '../App'
 import { normaliseSmsPermissions } from './smsCapabilities'
+import { resyncAdminClaims } from './hrmsSession'
+
+// After any admins-doc write, bring that person's Firebase HRMS claims (which
+// the database's RLS reads) in line with the doc. Email-keyed docs → by email;
+// phone-login admins' Firebase uid IS the docId.
+const resyncClaims = (id) => resyncAdminClaims(id.includes('@') ? { email: id } : { uid: id })
 
 /** Read the per-user SMS capability overrides off an admin doc (map of
  *  capabilityId -> bool; the difference from the role default). */
@@ -289,6 +295,7 @@ export async function createAdmin({ email, phone, fullName, role, branchCode, br
     addedByName: currentUser.displayName || currentUser.email,
     addedAt: Timestamp.now(),
   })
+  await resyncClaims(ref.id)
 }
 
 /**
@@ -422,6 +429,7 @@ export async function updateAdmin({ id, fullName, role, branchCode, branchCodes,
   }
 
   await setDoc(doc(db, 'admins', id), updates, { merge: true })
+  await resyncClaims(id)
 }
 
 /**
@@ -439,6 +447,7 @@ export async function setAdminActive({ id, isActive, currentUser }) {
     updatedByName: currentUser.displayName || currentUser.email,
     updatedAt: Timestamp.now(),
   }, { merge: true })
+  await resyncClaims(id)
 }
 
 /**
@@ -450,4 +459,5 @@ export async function deleteAdmin({ id }) {
   if (!id) throw new Error('Admin id is required')
   if (id === SUPER_ADMIN_EMAIL) throw new Error('Super admin cannot be removed')
   await deleteDoc(doc(db, 'admins', id))
+  await resyncClaims(id)
 }

@@ -11,6 +11,7 @@ import {
   effectiveBranches as computeEffectiveBranches,
 } from './lib/branch'
 import { adminModules } from './lib/admins'
+import { ensureHrmsClaims } from './lib/hrmsSession'
 import Login from './pages/Login'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
@@ -62,6 +63,17 @@ export default function App() {
 
       if (email === SUPER_ADMIN_EMAIL) {
         const allowed = ['MAIN', 'CITY']
+        // Database access rides on the Firebase token's HRMS claims (RLS,
+        // migration 030) — make sure they're stamped before any query runs.
+        try {
+          if (!(await ensureHrmsClaims())) throw new Error('no HRMS claims')
+        } catch (e) {
+          console.error('HRMS session setup failed:', e)
+          setAuthError('Could not start a secure session. Please try again.')
+          await signOut(auth)
+          setAuthLoading(false)
+          return
+        }
         setUser(u)
         setAdminRole('super_admin')
         setAllowedBranches(allowed)
@@ -123,6 +135,10 @@ export default function App() {
           console.warn(`Admin ${email} has missing/invalid branchCode (${data.branchCode}); defaulting to MAIN`)
           allowed = ['MAIN']
         }
+
+        // Stamp/refresh the token's HRMS claims (RLS reads them). The server
+        // re-derives access from the admins doc; no level = no database access.
+        if (!(await ensureHrmsClaims())) throw new Error('no HRMS claims')
 
         setUser(u)
         setAdminRole(hrmsLevel)

@@ -44,26 +44,25 @@ async function getAdminDoc(id: string): Promise<Record<string, any> | null> {
   return (await res.json())?.fields ?? {};
 }
 
-/** Returns the verified admin, or null when the caller isn't one. */
-export async function verifyHrmsAdmin(req: Request): Promise<HrmsAdmin | null> {
-  const token = (req.headers.get("x-firebase-token") || "").trim();
-  if (!token) return null;
-  // deno-lint-ignore no-explicit-any
-  let payload: any;
-  try {
-    ({ payload } = await jwtVerify(token, FIREBASE_JWKS, {
-      issuer: `https://securetoken.google.com/${PROJECT_ID}`,
-      audience: PROJECT_ID,
-    }));
-  } catch {
-    return null;
-  }
-  const uid = String(payload.sub || "");
-  const email = (payload.email as string | undefined)?.toLowerCase().trim() || null;
-  if (!uid) return null;
-  if (email === SUPER_ADMIN_EMAIL) return { uid, email, level: "super_admin" };
+export interface HrmsAccess {
+  level: string; // 'super_admin' | 'admin' | 'receptionist'
+  branches: string[];
+}
 
-  const fields = (email ? await getAdminDoc(email) : null) ?? await getAdminDoc(uid);
+const BRANCH_CODES = ["MAIN", "CITY"];
+
+/** HRMS access for a Firebase identity, from the admins collection — the same
+ *  rules as HRMS App.jsx (active doc, per-platform level with legacy
+ *  modules[] fallback, branchCodes[] → branchCode → MAIN). null = no access. */
+export async function resolveHrmsAccess(
+  uid: string,
+  email: string | null,
+): Promise<HrmsAccess | null> {
+  if (email === SUPER_ADMIN_EMAIL) {
+    return { level: "super_admin", branches: [...BRANCH_CODES] };
+  }
+  const fields = (email ? await getAdminDoc(email) : null) ??
+    (uid ? await getAdminDoc(uid) : null);
   if (!fields) return null;
   if (fields.isActive?.booleanValue === false) return null;
 
@@ -80,5 +79,43 @@ export async function verifyHrmsAdmin(req: Request): Promise<HrmsAdmin | null> {
     }
   }
   if (!level) return null;
-  return { uid, email, level };
+
+  const arr: string[] = (fields.branchCodes?.arrayValue?.values ?? [])
+    .map((v: { stringValue?: string }) => v.stringValue)
+    .filter((c: string | undefined) => !!c && BRANCH_CODES.includes(c));
+  const single = fields.branchCode?.stringValue;
+  const branches = arr.length > 0
+    ? arr
+    : (single && BRANCH_CODES.includes(single) ? [single] : ["MAIN"]);
+  return { level, branches };
+}
+
+/** Verify a Firebase ID token; returns { uid, email } or null. */
+export async function verifyFirebaseIdToken(
+  token: string,
+): Promise<{ uid: string; email: string | null } | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, FIREBASE_JWKS, {
+      issuer: `https://securetoken.google.com/${PROJECT_ID}`,
+      audience: PROJECT_ID,
+    });
+    const uid = String(payload.sub || "");
+    if (!uid) return null;
+    const email = (payload.email as string | undefined)?.toLowerCase().trim() || null;
+    return { uid, email };
+  } catch {
+    return null;
+  }
+}
+
+/** Returns the verified admin, or null when the caller isn't one. */
+export async function verifyHrmsAdmin(req: Request): Promise<HrmsAdmin | null> {
+  const who = await verifyFirebaseIdToken(
+    (req.headers.get("x-firebase-token") || "").trim(),
+  );
+  if (!who) return null;
+  const access = await resolveHrmsAccess(who.uid, who.email);
+  if (!access) return null;
+  return { uid: who.uid, email: who.email, level: access.level };
 }
