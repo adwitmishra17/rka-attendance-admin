@@ -17,8 +17,9 @@ import {
   VEHICLE_STATUSES,
 } from '../lib/vehicles'
 import { listEligibleEmployees } from '../lib/vehicleAssignments'
+import { loadVehiclePhotoUrls } from '../lib/vehiclePhotos'
 import {
-  Page, PageHead, Card, CardHead, PrimaryButton, Chip, SearchInput, LoadingBlock, EmptyBlock, PlusIcon,
+  Page, PageHead, Card, CardHead, PrimaryButton, Chip, SearchInput, LoadingBlock, EmptyBlock, PlusIcon, Avatar,
   primaryButtonStyle, secondaryButtonStyle, dangerButtonStyle, smallSecondaryButtonStyle,
 } from '../components/ui'
 
@@ -43,6 +44,7 @@ export default function Vehicles() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [photos, setPhotos] = useState({})   // vehicleId → presigned thumbnail URL
 
   // Unassigned fleet staff
   const [unassignedDrivers, setUnassignedDrivers] = useState([])
@@ -59,6 +61,8 @@ export default function Vehicles() {
     try {
       const list = await listVehicles({ effectiveBranches })
       setVehicles(list)
+      // Thumbnails resolve after the list paints; a failure just leaves placeholders.
+      loadVehiclePhotoUrls(list.map(v => v.id)).then(setPhotos).catch(() => {})
     } catch (e) {
       toast.show('Failed to load vehicles: ' + e.message, 'error')
       setVehicles([])
@@ -205,30 +209,20 @@ export default function Vehicles() {
             action={vehicles.length === 0 && <PrimaryButton icon={<PlusIcon />} onClick={() => setEditing({})}>Add vehicle</PrimaryButton>}
           />
         ) : (
-          <>
-            <div style={tableHeader}>
-              <div style={{ flex: '0 0 130px' }}>RC Number</div>
-              <div style={{ flex: '0 0 80px' }}>Type</div>
-              <div style={{ flex: 1, minWidth: 0 }}>Make / Model</div>
-              {canSwitchBranches && (
-                <div style={{ flex: '0 0 100px' }}>Branch</div>
-              )}
-              <div style={{ flex: '0 0 180px', minWidth: 0 }}>Driver / Conductor</div>
-              <div style={{ flex: '0 0 80px' }}>Status</div>
-              <div style={{ flex: '0 0 170px', textAlign: 'right' }}>Actions</div>
-            </div>
-            {filtered.map((v, idx) => (
-              <VehicleRow
+          <div style={{ padding: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 14 }}>
+            {filtered.map(v => (
+              <VehicleCard
                 key={v.id}
                 vehicle={v}
-                last={idx === filtered.length - 1}
+                photoUrl={photos[v.id]}
                 showBranch={canSwitchBranches}
                 onOpen={() => navigate(`/vehicles/${v.id}`)}
+                onOpenEmployee={(id) => navigate(`/employees/${id}`)}
                 onEdit={() => setEditing(v)}
                 onDelete={() => setDeleting(v)}
               />
             ))}
-          </>
+          </div>
         )}
       </Card>
 
@@ -354,69 +348,105 @@ function UnassignedFleetSection({ drivers, conductors, loading, onOpenEmployee }
 
 
 // ============================================================================
-// Vehicle row — RC is clickable and navigates to the detail page
+// Vehicle card — photo on top, identity, then the crew. Photo and RC open the
+// detail page; crew names open the employee profile.
 // ============================================================================
-function VehicleRow({ vehicle, last, showBranch, onOpen, onEdit, onDelete }) {
+function VehicleCard({ vehicle, photoUrl, showBranch, onOpen, onOpenEmployee, onEdit, onDelete }) {
   const v = vehicle
+  const title = [v.make, v.model].filter(Boolean).join(' ')
   return (
     <div style={{
+      border: '1px solid var(--gray-200)',
+      borderRadius: 14,
+      background: 'var(--white)',
+      overflow: 'hidden',
       display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-      padding: '12px 18px',
-      borderBottom: last ? 'none' : '1px solid var(--gray-100)',
-      fontSize: 13,
+      flexDirection: 'column',
+      minWidth: 0,
     }}>
+      {/* Photo */}
       <div
         onClick={onOpen}
-        style={{
-          flex: '0 0 130px',
-          fontWeight: 600,
-          color: 'var(--text)',
-          letterSpacing: '0.02em',
-          cursor: 'pointer',
-          fontVariantNumeric: 'tabular-nums',
-        }}
         title="Open vehicle"
-        role="link"
+        style={{ position: 'relative', aspectRatio: '16 / 10', overflow: 'hidden', background: 'var(--gray-50)', cursor: 'pointer', borderBottom: '1px solid var(--gray-100)' }}
       >
-        {formatRcForDisplay(v.rc_number)}
-      </div>
-      <div style={{ flex: '0 0 80px' }}>
-        <TypeBadge type={v.vehicle_type} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {v.make || v.model
-          ? <span>{[v.make, v.model].filter(Boolean).join(' ')}{v.year_of_manufacture ? <span style={{ color: 'var(--gray-400)' }}> · {v.year_of_manufacture}</span> : null}</span>
-          : <span style={{ color: 'var(--gray-400)' }}>—</span>}
-      </div>
-      {showBranch && (
-        <div style={{ flex: '0 0 100px', fontSize: 11.5, color: 'var(--text-muted)' }}>
-          {branchLabel(v.branch_code)}
-        </div>
-      )}
-      <div style={{ flex: '0 0 180px', minWidth: 0, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.4 }}>
-        {v.driver
-          ? <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              <span style={{ color: 'var(--text)' }}>{v.driver.full_name}</span>
-            </div>
-          : <div style={{ color: 'var(--gray-400)', fontStyle: 'italic' }}>No driver</div>}
-        {v.vehicle_type === 'bus' && (
-          v.conductor
-            ? <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                <span style={{ color: 'var(--text)' }}>{v.conductor.full_name}</span>
-                <span style={{ color: 'var(--gray-400)' }}> (cond.)</span>
-              </div>
-            : <div style={{ color: 'var(--gray-400)', fontStyle: 'italic' }}>No conductor</div>
+        {photoUrl ? (
+          <img src={photoUrl} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        ) : (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--gray-400)' }}>
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 17h2l1.5-7.5A2 2 0 0 1 8.46 8H15.54a2 2 0 0 1 1.96 1.5L19 17h2" />
+              <path d="M5 17v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2" />
+              <path d="M15 17v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2" />
+            </svg>
+            <span style={{ fontSize: 11, fontWeight: 500 }}>No photo yet</span>
+          </div>
         )}
+        <div style={{ position: 'absolute', top: 10, left: 10, display: 'flex', gap: 6 }}>
+          <TypeBadge type={v.vehicle_type} />
+          {v.status !== 'active' && <StatusBadge status={v.status} />}
+        </div>
       </div>
-      <div style={{ flex: '0 0 80px' }}>
-        <StatusBadge status={v.status} />
+
+      {/* Identity */}
+      <div style={{ padding: '12px 14px 10px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <div
+          onClick={onOpen}
+          role="link"
+          title="Open vehicle"
+          style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--text)', letterSpacing: '0.02em', cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}
+        >
+          {formatRcForDisplay(v.rc_number)}
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {title || 'Make / model not set'}
+          {v.year_of_manufacture ? ` · ${v.year_of_manufacture}` : ''}
+          {showBranch ? ` · ${branchLabel(v.branch_code)}` : ''}
+        </div>
       </div>
-      <div style={{ flex: '0 0 170px', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-        <button onClick={onOpen}    style={btnRow}>Open</button>
-        <button onClick={onEdit}    style={btnRow}>Edit</button>
-        <button onClick={onDelete}  style={btnRowDanger}>Delete</button>
+
+      {/* Crew */}
+      <div style={{ borderTop: '1px solid var(--gray-100)', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+        <CrewRow role="Driver" person={v.driver} onOpen={onOpenEmployee} />
+        {v.vehicle_type === 'bus' && <CrewRow role="Conductor" person={v.conductor} onOpen={onOpenEmployee} />}
+      </div>
+
+      {/* Actions */}
+      <div style={{ borderTop: '1px solid var(--gray-100)', padding: '8px 10px', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+        <button onClick={onOpen}   style={btnRow}>Open</button>
+        <button onClick={onEdit}   style={btnRow}>Edit</button>
+        <button onClick={onDelete} style={btnRowDanger}>Delete</button>
+      </div>
+    </div>
+  )
+}
+
+function CrewRow({ role, person, onOpen }) {
+  if (!person) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <span style={{ width: 28, height: 28, borderRadius: '50%', border: '1.5px dashed var(--gray-300)', flexShrink: 0 }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, color: 'var(--gray-400)', fontStyle: 'italic' }}>No {role.toLowerCase()} assigned</div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>{role}</div>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div
+      onClick={() => onOpen(person.id)}
+      title={`Open ${person.full_name}`}
+      style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, cursor: 'pointer', margin: '-3px -6px', padding: '3px 6px', borderRadius: 8 }}
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+    >
+      <Avatar name={person.full_name} size={28} bg={role === 'Driver' ? 'var(--green-light)' : 'var(--gold-light)'} fg={role === 'Driver' ? 'var(--green-dark)' : 'var(--gold-dark)'} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{person.full_name}</div>
+        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+          {role}{person.employee_code ? ` · ${person.employee_code}` : ''}
+        </div>
       </div>
     </div>
   )
@@ -770,20 +800,6 @@ function inputStyle(hasError) {
     fontFamily: 'inherit',
     outline: 'none',
   }
-}
-
-const tableHeader = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 12,
-  padding: '10px 18px',
-  background: 'var(--gray-50)',
-  borderBottom: '1px solid var(--gray-100)',
-  fontSize: 10.5,
-  fontWeight: 600,
-  color: 'var(--text-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.06em',
 }
 
 const btnPrimary = primaryButtonStyle
